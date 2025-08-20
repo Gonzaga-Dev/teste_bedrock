@@ -3,20 +3,20 @@
 import { useEffect, useRef, useState, FormEvent } from "react";
 import styles from "./page.module.css";
 
-// 1) Amplify + UI
+// Amplify Auth UI
 import { Amplify } from "aws-amplify";
 import outputs from "@/amplify_outputs.json";
 import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 
-// configure uma única vez no client
+// configure Amplify (client-side)
 Amplify.configure(outputs);
 
 const LEGEND = "Sou o MX Lakinho, seu amiguinho. Posso ajudar?";
 type Msg = { role: "user" | "assistant"; content: string };
 
-// 3) (opcional) allowlist
-const ALLOW = new Set([
+// (opcional) allowlist: só estes e-mails permanecem logados
+const ALLOW = new Set<string>([
   "ricardo.gonzaga@compasso.com.br",
   "lrgr3000@gmail.com",
 ]);
@@ -54,18 +54,17 @@ export default function App() {
     }, 400);
   }
 
-  // 2) Envolver tudo no Authenticator
   return (
     <Authenticator>
       {({ user, signOut }) => {
-        // 3) (opcional) bloqueio por allowlist no client
         const email =
-          (user as any)?.signInDetails?.loginId ||
-          (user as any)?.attributes?.email ||
+          // loginId cobre e-mail em provedores diferentes
+          (user as any)?.signInDetails?.loginId?.toLowerCase?.() ||
+          (user as any)?.attributes?.email?.toLowerCase?.() ||
           "";
 
-        if (email && !ALLOW.has(String(email).toLowerCase())) {
-          // se não for permitido, sai imediatamente
+        // (opcional) se não estiver na allowlist, desloga
+        if (email && !ALLOW.has(email)) {
           signOut();
           return null;
         }
