@@ -13,7 +13,6 @@ export default function App() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  // efeito de digitação da legenda
   useEffect(() => {
     let i = 0;
     const id = setInterval(() => {
@@ -24,7 +23,6 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  // scroll automático para o fim
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -37,14 +35,13 @@ export default function App() {
     setMessages((m) => [...m, { role: "user", content: text }]);
     setInput("");
 
-    // resposta fixa
     setTimeout(() => {
       setMessages((m) => [...m, { role: "assistant", content: "Num sei." }]);
     }, 400);
   }
 
   return (
-    <main className={styles.wrapper}>
+    <div className={styles.wrapper}>
       <header className={styles.header}>
         <h1 className={styles.title}>Talent Match Making</h1>
         <div className={styles.legend}>
@@ -55,17 +52,12 @@ export default function App() {
 
       <section className={styles.chat}>
         {messages.length === 0 && (
-          <div className={styles.placeholder}>
-            Envie uma mensagem para começar.
-          </div>
+          <div className={styles.placeholder}>Envie uma mensagem para começar.</div>
         )}
-
-        {messages.map((m, idx) => (
+        {messages.map((m, i) => (
           <div
-            key={idx}
-            className={`${styles.msg} ${
-              m.role === "user" ? styles.user : styles.assistant
-            }`}
+            key={i}
+            className={`${styles.msg} ${m.role === "user" ? styles.user : styles.assistant}`}
           >
             {m.content}
           </div>
@@ -80,10 +72,8 @@ export default function App() {
           placeholder="Digite sua mensagem…"
           className={styles.textInput}
         />
-        <button type="submit" className={styles.sendBtn} aria-label="Enviar">
-          ➤
-        </button>
+        <button type="submit" className={styles.sendBtn} aria-label="Enviar">➤</button>
       </form>
-    </main>
+    </div>
   );
 }
