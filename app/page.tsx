@@ -1,52 +1,89 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "@/amplify/data/resource";
-import "./../app/app.css";
-import { Amplify } from "aws-amplify";
-import outputs from "@/amplify_outputs.json";
-import "@aws-amplify/ui-react/styles.css";
+import { useEffect, useRef, useState, FormEvent } from "react";
+import styles from "./page.module.css";
 
-Amplify.configure(outputs);
+const LEGEND = "Sou o MX Lakinho, seu amiguinho. Posso ajudar?";
 
-const client = generateClient<Schema>();
+type Msg = { role: "user" | "assistant"; content: string };
 
 export default function App() {
-  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
+  const [legend, setLegend] = useState("");
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const endRef = useRef<HTMLDivElement | null>(null);
 
-  function listTodos() {
-    client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos([...data.items]),
-    });
-  }
-
+  // efeito de digitação da legenda
   useEffect(() => {
-    listTodos();
+    let i = 0;
+    const id = setInterval(() => {
+      setLegend(LEGEND.slice(0, i + 1));
+      i++;
+      if (i >= LEGEND.length) clearInterval(id);
+    }, 35);
+    return () => clearInterval(id);
   }, []);
 
-  function createTodo() {
-    client.models.Todo.create({
-      content: window.prompt("Todo content"),
-    });
+  // scroll automático para o fim
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  function handleSend(e: FormEvent) {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text) return;
+
+    setMessages((m) => [...m, { role: "user", content: text }]);
+    setInput("");
+
+    // resposta fixa
+    setTimeout(() => {
+      setMessages((m) => [...m, { role: "assistant", content: "Num sei." }]);
+    }, 400);
   }
 
   return (
-    <main>
-      <h1>My todos</h1>
-      <button onClick={createTodo}>+ new</button>
-      <ul>
-        {todos.map((todo) => (
-          <li key={todo.id}>{todo.content}</li>
+    <main className={styles.wrapper}>
+      <header className={styles.header}>
+        <h1 className={styles.title}>Talent Match Making</h1>
+        <div className={styles.legend}>
+          {legend}
+          <span className={styles.caret} />
+        </div>
+      </header>
+
+      <section className={styles.chat}>
+        {messages.length === 0 && (
+          <div className={styles.placeholder}>
+            Envie uma mensagem para começar.
+          </div>
+        )}
+
+        {messages.map((m, idx) => (
+          <div
+            key={idx}
+            className={`${styles.msg} ${
+              m.role === "user" ? styles.user : styles.assistant
+            }`}
+          >
+            {m.content}
+          </div>
         ))}
-      </ul>
-      <div>
-        🥳 App successfully hosted. Try creating a new todo.
-        <br />
-        <a href="https://docs.amplify.aws/nextjs/start/quickstart/nextjs-app-router-client-components/">
-          Review next steps of this tutorial.
-        </a>
-      </div>
+        <div ref={endRef} />
+      </section>
+
+      <form onSubmit={handleSend} className={styles.inputBar}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Digite sua mensagem…"
+          className={styles.textInput}
+        />
+        <button type="submit" className={styles.sendBtn} aria-label="Enviar">
+          ➤
+        </button>
+      </form>
     </main>
   );
 }
