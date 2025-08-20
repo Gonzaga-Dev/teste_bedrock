@@ -122,4 +122,4 @@
 }
 
 .sendBtn:hover { filter: brightness(1.05); }
-sendBtn:active { filter: brightness(0.98); }
+.sendBtn:active { filter: brightness(0.98); }
