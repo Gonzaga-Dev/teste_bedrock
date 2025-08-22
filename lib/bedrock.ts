@@ -1,14 +1,19 @@
 // lib/bedrock.ts
 // Invoca o Bedrock (Claude 3.5 Haiku via Inference Profile) sem SDK, usando assinatura SigV4.
-// Região: us-east-1 (ou process.env.BEDROCK_REGION).
-// Requer: BEDROCK_INFERENCE_PROFILE_ARN (ARN do inference profile) e permissões IAM para bedrock:InvokeModel.
+// Região fixa: us-east-1. ModelId: ARN do Inference Profile (hardcoded abaixo).
 
 import crypto from "crypto";
 import http from "http";
 import https from "https";
 
-const REGION = process.env.BEDROCK_REGION || "us-east-1";
-const MODEL_ID = encodeURIComponent(process.env.BEDROCK_INFERENCE_PROFILE_ARN || "");
+// ---------- CONFIG FIXA ----------
+const REGION = "us-east-1";
+const INFERENCE_PROFILE_ARN =
+  process.env.BEDROCK_INFERENCE_PROFILE_ARN ??
+  "arn:aws:bedrock:us-east-1:299276366441:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0";
+// ---------------------------------
+
+const MODEL_ID = encodeURIComponent(INFERENCE_PROFILE_ARN);
 const SERVICE = "bedrock";
 const HOST = `bedrock-runtime.${REGION}.amazonaws.com`;
 const ENDPOINT = `https://${HOST}/model/${MODEL_ID}/invoke`;
@@ -149,7 +154,9 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
     topP = 0.9,
   } = args;
 
-  if (!MODEL_ID) throw new Error("BEDROCK_INFERENCE_PROFILE_ARN não definido.");
+  if (!INFERENCE_PROFILE_ARN) {
+    throw new Error("Inference Profile ARN não definido.");
+  }
 
   const payload = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
@@ -189,11 +196,10 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
 
   const rawText = await res.text().catch(() => "");
   if (!res.ok) {
-    // Propaga o corpo bruto pra facilitar debug no front
     throw new Error(`Bedrock HTTP ${res.status}: ${rawText || res.statusText}`);
   }
 
-  // Extração tolerante (igual ao seu Python, com fallback)
+  // Extração tolerante
   try {
     const parsed: any = rawText ? JSON.parse(rawText) : {};
     const reply =
@@ -204,7 +210,6 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
       "";
     return (reply || "[sem texto]").toString().trim();
   } catch {
-    // Se não vier JSON, retorna texto bruto
     return rawText.trim() || "[sem texto]";
   }
 }
