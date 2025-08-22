@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, FormEvent } from "react";
 import styles from "./page.module.css";
 
 const LEGEND = "Sou o MX Lakinho, seu amiguinho. Posso ajudar?";
-
 type Msg = { role: "user" | "assistant"; content: string };
 
 export default function App() {
@@ -33,24 +32,29 @@ export default function App() {
     const text = input.trim();
     if (!text || loading) return;
 
-    // adiciona a mensagem do usuário ao histórico
-    const newHistory = [...messages, { role: "user", content: text } as Msg];
+    const newHistory = [...messages, { role: "user", content: text } as Msg].slice(-20);
     setMessages(newHistory);
     setInput("");
     setLoading(true);
 
     try {
-      // chama o route handler (server) que invoca o Bedrock
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, history: newHistory }),
       });
 
-      const data = await res.json();
-      const reply = (data?.reply ?? "Erro: resposta vazia").toString();
+      let reply: string;
+      try {
+        const data = await res.json();
+        reply =
+          (!res.ok && data?.error && `⚠️ ${data.error}`) ||
+          (data?.reply ?? "⚠️ Resposta vazia do servidor");
+      } catch {
+        reply = `⚠️ Falha ao parsear resposta (${res.status} ${res.statusText})`;
+      }
 
-      setMessages((m) => [...m, { role: "assistant", content: reply }]);
+      setMessages((m) => [...m, { role: "assistant", content: reply.toString() }]);
     } catch (err: any) {
       setMessages((m) => [
         ...m,
@@ -84,9 +88,7 @@ export default function App() {
           </div>
         ))}
         {loading && (
-          <div className={`${styles.msg} ${styles.assistant}`}>
-            Gerando resposta…
-          </div>
+          <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>
         )}
         <div ref={endRef} />
       </section>
