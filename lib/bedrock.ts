@@ -1,5 +1,5 @@
 // lib/bedrock.ts
-// Chamada ao Bedrock (Claude Haiku via Inference Profile) sem SDK, com SigV4 manual.
+// Invoca Bedrock (Haiku via Inference Profile) sem SDK, com assinatura SigV4 manual.
 
 import crypto from "crypto";
 import http from "http";
@@ -18,12 +18,8 @@ type AwsCreds = {
   expiration?: string;
 };
 
-type Msg = { role: "user" | "assistant"; content: string };
-
-type InvokeArgs = {
-  message: string;
-  history?: Msg[];
-};
+export type Msg = { role: "user" | "assistant"; content: string };
+type InvokeArgs = { message: string; history?: Msg[] };
 
 function httpGetJson(url: string): Promise<any> {
   const lib = url.startsWith("https") ? https : http;
@@ -45,7 +41,7 @@ function httpGetJson(url: string): Promise<any> {
 }
 
 async function getAwsCredentials(): Promise<AwsCreds> {
-  // 1) ENV (útil localmente)
+  // 1) ENV (útil em dev local)
   if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
     return {
       accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
@@ -97,13 +93,14 @@ function signSigV4(params: {
   const { method, path, host, region, service, payload, creds } = params;
   const now = new Date();
   const { amzDate, dateStamp } = toAmzDate(now);
+
   const canonicalUri = path; // /model/<encoded-arn>/invoke
   const canonicalQuerystring = "";
   const canonicalHeaders =
-    `content-type:application/json\nhost:${host}\nx-amz-date:${amzDate}\n` +
+    `accept:application/json\ncontent-type:application/json\nhost:${host}\nx-amz-date:${amzDate}\n` +
     (creds.sessionToken ? `x-amz-security-token:${creds.sessionToken}\n` : "");
   const signedHeaders =
-    `content-type;host;x-amz-date` + (creds.sessionToken ? `;x-amz-security-token` : "");
+    `accept;content-type;host;x-amz-date` + (creds.sessionToken ? `;x-amz-security-token` : "");
   const payloadHash = sha256Hex(payload);
 
   const canonicalRequest = [
@@ -133,6 +130,7 @@ function signSigV4(params: {
   const authorizationHeader = `${algorithm} Credential=${creds.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
   const headers: Record<string, string> = {
+    accept: "application/json",
     "content-type": "application/json",
     host,
     "x-amz-date": amzDate,
@@ -145,6 +143,7 @@ function signSigV4(params: {
 
 export async function invokeHaiku({ message, history = [] }: InvokeArgs): Promise<string> {
   if (!MODEL_ID) throw new Error("BEDROCK_INFERENCE_PROFILE_ARN não definido.");
+
   const payload = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
     max_tokens: 1000,
@@ -168,11 +167,26 @@ export async function invokeHaiku({ message, history = [] }: InvokeArgs): Promis
   });
 
   const res = await fetch(ENDPOINT, { method: "POST", headers, body: payload });
+
+  const rawText = await res.text().catch(() => "");
   if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Bedrock HTTP ${res.status}: ${errText || res.statusText}`);
+    throw new Error(`Bedrock HTTP ${res.status}: ${rawText || res.statusText}`);
   }
 
-  const json = (await res.json()) as any;
-  return json?.content?.[0]?.text?.toString().trim() ?? "[sem texto]";
+  // Mesma extração do seu script Python (content[0].text), com tolerância:
+  let parsed: any = {};
+  try {
+    parsed = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    return rawText.trim() || "[sem texto]";
+  }
+
+  const reply =
+    parsed?.content?.[0]?.text ??
+    parsed?.message?.content?.[0]?.text ??
+    parsed?.output_text ??
+    parsed?.completion ??
+    "";
+
+  return (reply || "[sem texto]").toString().trim();
 }
