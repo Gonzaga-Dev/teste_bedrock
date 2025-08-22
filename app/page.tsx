@@ -11,6 +11,7 @@ export default function App() {
   const [legend, setLegend] = useState("");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -27,17 +28,37 @@ export default function App() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  function handleSend(e: FormEvent) {
+  async function handleSend(e: FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text) return;
+    if (!text || loading) return;
 
-    setMessages((m) => [...m, { role: "user", content: text }]);
+    // adiciona a mensagem do usuário ao histórico
+    const newHistory = [...messages, { role: "user", content: text } as Msg];
+    setMessages(newHistory);
     setInput("");
+    setLoading(true);
 
-    setTimeout(() => {
-      setMessages((m) => [...m, { role: "assistant", content: "Num sei." }]);
-    }, 400);
+    try {
+      // chama o route handler (server) que invoca o Bedrock
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history: newHistory }),
+      });
+
+      const data = await res.json();
+      const reply = (data?.reply ?? "Erro: resposta vazia").toString();
+
+      setMessages((m) => [...m, { role: "assistant", content: reply }]);
+    } catch (err: any) {
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: `Falhou ao contactar o modelo: ${err?.message || err}` },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -51,7 +72,7 @@ export default function App() {
       </header>
 
       <section className={styles.chat}>
-        {messages.length === 0 && (
+        {messages.length === 0 && !loading && (
           <div className={styles.placeholder}>Envie uma mensagem para começar.</div>
         )}
         {messages.map((m, i) => (
@@ -62,6 +83,11 @@ export default function App() {
             {m.content}
           </div>
         ))}
+        {loading && (
+          <div className={`${styles.msg} ${styles.assistant}`}>
+            Gerando resposta…
+          </div>
+        )}
         <div ref={endRef} />
       </section>
 
@@ -71,8 +97,11 @@ export default function App() {
           onChange={(e) => setInput(e.target.value)}
           placeholder="Digite sua mensagem…"
           className={styles.textInput}
+          disabled={loading}
         />
-        <button type="submit" className={styles.sendBtn} aria-label="Enviar">➤</button>
+        <button type="submit" className={styles.sendBtn} aria-label="Enviar" disabled={loading}>
+          ➤
+        </button>
       </form>
     </div>
   );
