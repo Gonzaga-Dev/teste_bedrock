@@ -1,8 +1,11 @@
 // lib/bedrock.ts
-// Invoca o Bedrock (Claude 3.5 Haiku via Inference Profile) sem SDK (SigV4).
-// Região: us-east-1 (fixa, com override opcional via BEDROCK_REGION).
-// Autenticação: (1) ENV vars customizadas BEDROCK_*  (2) ENV padrão AWS_* (dev local)
-//               (3) Credenciais do container (execution role no Amplify/ECS).
+// Invoca Bedrock (Claude 3.5 Haiku via Inference Profile) sem SDK, com assinatura SigV4.
+// Fontes de credenciais (nessa ordem):
+//   1) BEDROCK_ACCESS_KEY_ID / BEDROCK_SECRET_ACCESS_KEY / BEDROCK_SESSION_TOKEN
+//   2) AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN (dev local)
+//   3) Credenciais do container (execution role) via AWS_CONTAINER_CREDENTIALS_*
+//
+// Requisitos de permissão na role/chaves: bedrock:InvokeModel, bedrock:GetInferenceProfile (opcional).
 
 import crypto from "crypto";
 import http from "http";
@@ -60,7 +63,7 @@ function httpGetJson(url: string): Promise<any> {
 }
 
 async function getAwsCredentials(): Promise<AwsCreds> {
-  // (1) ENV customizadas (permitidas no Amplify)
+  // (1) ENV customizadas (Amplify aceita, pois não começam com AWS_)
   const akidCustom = process.env.BEDROCK_ACCESS_KEY_ID;
   const secretCustom = process.env.BEDROCK_SECRET_ACCESS_KEY;
   const tokenCustom = process.env.BEDROCK_SESSION_TOKEN;
@@ -73,7 +76,7 @@ async function getAwsCredentials(): Promise<AwsCreds> {
     };
   }
 
-  // (2) ENV padrão AWS_* (útil em dev local; o Amplify bloqueia definir novas AWS_*)
+  // (2) ENV padrão (útil em dev local)
   const akid = process.env.AWS_ACCESS_KEY_ID;
   const secret = process.env.AWS_SECRET_ACCESS_KEY;
   const token = process.env.AWS_SESSION_TOKEN;
@@ -86,13 +89,21 @@ async function getAwsCredentials(): Promise<AwsCreds> {
     };
   }
 
-  // (3) Credenciais do container (execution role do Amplify/ECS)
+  // (3) Credenciais do container (execution role)
   const rel = process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
   const full = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
   const url = rel ? `http://169.254.170.2${rel}` : full;
 
   if (!url) {
-    throw new Error("Credenciais AWS não encontradas no ambiente/role.");
+    const tried = {
+      bedrockEnv: !!akidCustom && !!secretCustom,
+      awsEnv: !!akid && !!secret,
+      containerRel: !!rel,
+      containerFull: !!full,
+    };
+    throw new Error(
+      `Credenciais AWS não encontradas no ambiente/role. ${JSON.stringify(tried)}`
+    );
   }
 
   const json = await httpGetJson(url);
@@ -215,7 +226,7 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
     creds,
   });
 
-  // Timeout de rede (evita requests pendurados)
+  // Timeout de rede
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   let res: Response;
@@ -236,11 +247,10 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
 
   const rawText = await res.text().catch(() => "");
   if (!res.ok) {
-    // devolve corpo bruto para facilitar diagnóstico no front
     throw new Error(`Bedrock HTTP ${res.status}: ${rawText || res.statusText}`);
   }
 
-  // Extração tolerante (varia por provedor/modelo)
+  // Extração tolerante
   try {
     const parsed: any = rawText ? JSON.parse(rawText) : {};
     const reply =
@@ -251,7 +261,6 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
       "";
     return (reply || "[sem texto]").toString().trim();
   } catch {
-    // Se não vier JSON, retorna texto bruto
     return rawText.trim() || "[sem texto]";
   }
 }
