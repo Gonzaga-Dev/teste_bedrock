@@ -1,17 +1,21 @@
 // lib/bedrock.ts
-// Invoca o Bedrock (Claude 3.5 Haiku via Inference Profile) sem SDK, usando assinatura SigV4.
-// Região fixa: us-east-1. ModelId: ARN do Inference Profile (hardcoded abaixo).
+// Invoca o Bedrock (Claude 3.5 Haiku via Inference Profile) sem SDK (SigV4).
+// Região: us-east-1 (fixa, com override opcional via BEDROCK_REGION).
+// Autenticação: (1) ENV vars customizadas BEDROCK_*  (2) ENV padrão AWS_* (dev local)
+//               (3) Credenciais do container (execution role no Amplify/ECS).
 
 import crypto from "crypto";
 import http from "http";
 import https from "https";
 
-// ---------- CONFIG FIXA ----------
-const REGION = "us-east-1";
+// ---------- CONFIG ----------
+const REGION =
+  process.env.BEDROCK_REGION?.trim() || "us-east-1";
+
 const INFERENCE_PROFILE_ARN =
-  process.env.BEDROCK_INFERENCE_PROFILE_ARN ??
+  process.env.BEDROCK_INFERENCE_PROFILE_ARN?.trim() ||
   "arn:aws:bedrock:us-east-1:299276366441:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0";
-// ---------------------------------
+// ----------------------------
 
 const MODEL_ID = encodeURIComponent(INFERENCE_PROFILE_ARN);
 const SERVICE = "bedrock";
@@ -27,7 +31,13 @@ type AwsCreds = {
 };
 
 export type Msg = { role: "user" | "assistant"; content: string };
-type InvokeArgs = { message: string; history?: Msg[]; maxTokens?: number; temperature?: number; topP?: number };
+type InvokeArgs = {
+  message: string;
+  history?: Msg[];
+  maxTokens?: number;
+  temperature?: number;
+  topP?: number;
+};
 
 // ===== Utilidades =====
 function httpGetJson(url: string): Promise<any> {
@@ -50,19 +60,41 @@ function httpGetJson(url: string): Promise<any> {
 }
 
 async function getAwsCredentials(): Promise<AwsCreds> {
-  // 1) ENV (útil em dev local)
-  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+  // (1) ENV customizadas (permitidas no Amplify)
+  const akidCustom = process.env.BEDROCK_ACCESS_KEY_ID;
+  const secretCustom = process.env.BEDROCK_SECRET_ACCESS_KEY;
+  const tokenCustom = process.env.BEDROCK_SESSION_TOKEN;
+
+  if (akidCustom && secretCustom) {
     return {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      sessionToken: process.env.AWS_SESSION_TOKEN,
+      accessKeyId: akidCustom,
+      secretAccessKey: secretCustom,
+      sessionToken: tokenCustom,
     };
   }
-  // 2) Credenciais do container (execution role no Amplify)
+
+  // (2) ENV padrão AWS_* (útil em dev local; o Amplify bloqueia definir novas AWS_*)
+  const akid = process.env.AWS_ACCESS_KEY_ID;
+  const secret = process.env.AWS_SECRET_ACCESS_KEY;
+  const token = process.env.AWS_SESSION_TOKEN;
+
+  if (akid && secret) {
+    return {
+      accessKeyId: akid,
+      secretAccessKey: secret,
+      sessionToken: token,
+    };
+  }
+
+  // (3) Credenciais do container (execution role do Amplify/ECS)
   const rel = process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
   const full = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
   const url = rel ? `http://169.254.170.2${rel}` : full;
-  if (!url) throw new Error("Credenciais AWS não encontradas no ambiente/role.");
+
+  if (!url) {
+    throw new Error("Credenciais AWS não encontradas no ambiente/role.");
+  }
+
   const json = await httpGetJson(url);
   return {
     accessKeyId: json.AccessKeyId,
@@ -164,7 +196,10 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
     temperature,
     top_p: topP,
     messages: [
-      ...history.map((m) => ({ role: m.role, content: [{ type: "text", text: m.content }] })),
+      ...history.map((m) => ({
+        role: m.role,
+        content: [{ type: "text", text: m.content }],
+      })),
       { role: "user", content: [{ type: "text", text: message }] },
     ],
   });
@@ -182,10 +217,15 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
 
   // Timeout de rede (evita requests pendurados)
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000); // 30s
+  const timer = setTimeout(() => controller.abort(), 30000);
   let res: Response;
   try {
-    res = await fetch(ENDPOINT, { method: "POST", headers, body: payload, signal: controller.signal });
+    res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers,
+      body: payload,
+      signal: controller.signal,
+    });
   } catch (err: any) {
     clearTimeout(timer);
     if (err?.name === "AbortError") throw new Error("Timeout ao chamar o Bedrock (30s).");
@@ -196,10 +236,11 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
 
   const rawText = await res.text().catch(() => "");
   if (!res.ok) {
+    // devolve corpo bruto para facilitar diagnóstico no front
     throw new Error(`Bedrock HTTP ${res.status}: ${rawText || res.statusText}`);
   }
 
-  // Extração tolerante
+  // Extração tolerante (varia por provedor/modelo)
   try {
     const parsed: any = rawText ? JSON.parse(rawText) : {};
     const reply =
@@ -210,6 +251,7 @@ export async function invokeHaiku(args: InvokeArgs): Promise<string> {
       "";
     return (reply || "[sem texto]").toString().trim();
   } catch {
+    // Se não vier JSON, retorna texto bruto
     return rawText.trim() || "[sem texto]";
   }
 }
