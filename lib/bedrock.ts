@@ -1,85 +1,31 @@
-// lib/bedrock.ts
-// Invoca Bedrock (Claude 3.5 Haiku via Inference Profile) sem SDK, com assinatura SigV4.
-// Fontes de credenciais (nessa ordem):
-//   1) BEDROCK_ACCESS_KEY_ID / BEDROCK_SECRET_ACCESS_KEY / BEDROCK_SESSION_TOKEN
-//   2) AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN (dev local)
-//   3) Credenciais do container (execution role) via AWS_CONTAINER_CREDENTIALS_*
-//
-// Requisitos de permissão na role/chaves: bedrock:InvokeModel, bedrock:GetInferenceProfile (opcional).
+// lib/bedrock.ts (refatorado p/ nova lógica com SDK)
+// Requisitos de permissão na role: bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream (se for usar streaming), e opcionalmente bedrock:GetInferenceProfile.
 
-import crypto from "crypto";
-import http from "http";
-import https from "https";
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 
-// ---------- CONFIG ----------
+// -------- Region & Model/Profile resolution --------
 const REGION =
-  process.env.BEDROCK_REGION?.trim() || "us-east-1";
+  process.env.BEDROCK_REGION?.trim() ||
+  process.env.AWS_REGION ||
+  process.env.AWS_DEFAULT_REGION ||
+  "us-east-1";
 
-const INFERENCE_PROFILE_ARN =
+// Preferir MODEL_ID; se ausente, cair para PROFILE ARN; senão usar um default seguro em us-east-1.
+const RESOLVED_MODEL_ID =
+  process.env.BEDROCK_MODEL_ID?.trim() ||
   process.env.BEDROCK_INFERENCE_PROFILE_ARN?.trim() ||
-  "arn:aws:bedrock:us-east-1:299276366441:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0";
-// ----------------------------
+  "anthropic.claude-3-5-haiku-20241022-v1:0";
 
-const MODEL_ID = encodeURIComponent(INFERENCE_PROFILE_ARN);
-const SERVICE = "bedrock";
-const HOST = `bedrock-runtime.${REGION}.amazonaws.com`;
-const ENDPOINT = `https://${HOST}/model/${MODEL_ID}/invoke`;
-
-// ===== Tipos =====
-type AwsCreds = {
-  accessKeyId: string;
-  secretAccessKey: string;
-  sessionToken?: string;
-  expiration?: string;
-};
-
-export type Msg = { role: "user" | "assistant"; content: string };
-type InvokeArgs = {
-  message: string;
-  history?: Msg[];
-  maxTokens?: number;
-  temperature?: number;
-  topP?: number;
-};
-
-// ===== Utilidades =====
-function httpGetJson(url: string): Promise<any> {
-  const lib = url.startsWith("https") ? https : http;
-  return new Promise((resolve, reject) => {
-    lib
-      .get(url, (res) => {
-        let data = "";
-        res.on("data", (c) => (data += c));
-        res.on("end", () => {
-          try {
-            resolve(JSON.parse(data));
-          } catch (e) {
-            reject(e);
-          }
-        });
-      })
-      .on("error", reject);
-  });
-}
-
-async function getAwsCredentials(): Promise<AwsCreds> {
-  // (1) ENV customizadas (Amplify aceita, pois não começam com AWS_)
-  const akidCustom = process.env.BEDROCK_ACCESS_KEY_ID;
-  const secretCustom = process.env.BEDROCK_SECRET_ACCESS_KEY;
-  const tokenCustom = process.env.BEDROCK_SESSION_TOKEN;
-
-  if (akidCustom && secretCustom) {
-    return {
-      accessKeyId: akidCustom,
-      secretAccessKey: secretCustom,
-      sessionToken: tokenCustom,
-    };
-  }
-
-  // (2) ENV padrão (útil em dev local)
-  const akid = process.env.AWS_ACCESS_KEY_ID;
-  const secret = process.env.AWS_SECRET_ACCESS_KEY;
-  const token = process.env.AWS_SESSION_TOKEN;
+// -------- Credenciais (opcionalmente via env custom) --------
+// Em produção no Amplify, NÃO defina chaves; deixe a role SSR prover.
+// Este bloco só existe para quem quer rodar local com env custom sem perfis AWS.
+function getOptionalStaticCredentials() {
+  const akid =
+    process.env.BEDROCK_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+  const secret =
+    process.env.BEDROCK_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+  const token =
+    process.env.BEDROCK_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN;
 
   if (akid && secret) {
     return {
@@ -88,179 +34,116 @@ async function getAwsCredentials(): Promise<AwsCreds> {
       sessionToken: token,
     };
   }
-
-  // (3) Credenciais do container (execution role)
-  const rel = process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
-  const full = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
-  const url = rel ? `http://169.254.170.2${rel}` : full;
-
-  if (!url) {
-    const tried = {
-      bedrockEnv: !!akidCustom && !!secretCustom,
-      awsEnv: !!akid && !!secret,
-      containerRel: !!rel,
-      containerFull: !!full,
-    };
-    throw new Error(
-      `Credenciais AWS não encontradas no ambiente/role. ${JSON.stringify(tried)}`
-    );
-  }
-
-  const json = await httpGetJson(url);
-  return {
-    accessKeyId: json.AccessKeyId,
-    secretAccessKey: json.SecretAccessKey,
-    sessionToken: json.Token,
-    expiration: json.Expiration,
-  };
+  return undefined; // provider chain padrão (role, SSO, etc.)
 }
 
-function hmac(key: Buffer | string, data: string): Buffer {
-  return crypto.createHmac("sha256", key).update(data, "utf8").digest();
-}
-function sha256Hex(data: string | Buffer): string {
-  return crypto.createHash("sha256").update(data).digest("hex");
-}
-function toAmzDate(date: Date): { amzDate: string; dateStamp: string } {
-  const yyyy = date.getUTCFullYear();
-  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(date.getUTCDate()).padStart(2, "0");
-  const HH = String(date.getUTCHours()).padStart(2, "0");
-  const MM = String(date.getUTCMinutes()).padStart(2, "0");
-  const SS = String(date.getUTCSeconds()).padStart(2, "0");
-  const dateStamp = `${yyyy}${mm}${dd}`;
-  const amzDate = `${dateStamp}T${HH}${MM}${SS}Z`;
-  return { amzDate, dateStamp };
-}
+// Cliente Bedrock
+const bedrock = new BedrockRuntimeClient({
+  region: REGION,
+  credentials: getOptionalStaticCredentials(),
+});
 
-function signSigV4(params: {
-  method: string;
-  path: string;
-  host: string;
-  region: string;
-  service: string;
-  payload: string;
-  creds: AwsCreds;
-}) {
-  const { method, path, host, region, service, payload, creds } = params;
-  const { amzDate, dateStamp } = toAmzDate(new Date());
+// ===== Tipos =====
+export type Msg = { role: "user" | "assistant"; content: string };
 
-  const canonicalUri = path; // /model/<encoded-arn>/invoke
-  const canonicalQuerystring = "";
-  const canonicalHeaders =
-    `accept:application/json\ncontent-type:application/json\nhost:${host}\nx-amz-date:${amzDate}\n` +
-    (creds.sessionToken ? `x-amz-security-token:${creds.sessionToken}\n` : "");
-  const signedHeaders =
-    `accept;content-type;host;x-amz-date` + (creds.sessionToken ? `;x-amz-security-token` : "");
-  const payloadHash = sha256Hex(payload);
+type InvokeArgs = {
+  message: string;
+  history?: Msg[];
+  maxTokens?: number;
+  temperature?: number;
+  topP?: number;
+  timeoutMs?: number; // novo: permite sobrescrever timeout
+};
 
-  const canonicalRequest = [
-    method,
-    canonicalUri,
-    canonicalQuerystring,
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash,
-  ].join("\n");
-
-  const algorithm = "AWS4-HMAC-SHA256";
-  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const stringToSign = [algorithm, amzDate, credentialScope, sha256Hex(canonicalRequest)].join("\n");
-
-  const kDate = hmac("AWS4" + creds.secretAccessKey, dateStamp);
-  const kRegion = hmac(kDate, region);
-  const kService = hmac(kRegion, service);
-  const kSigning = hmac(kService, "aws4_request");
-  const signature = crypto.createHmac("sha256", kSigning).update(stringToSign).digest("hex");
-
-  const authorizationHeader = `${algorithm} Credential=${creds.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-  const headers: Record<string, string> = {
-    accept: "application/json",
-    "content-type": "application/json",
-    host,
-    "x-amz-date": amzDate,
-    authorization: authorizationHeader,
-  };
-  if (creds.sessionToken) headers["x-amz-security-token"] = creds.sessionToken;
-
-  return { headers };
+// ===== Util =====
+function sanitizeHistory(history: Msg[]): { role: "user" | "assistant"; content: { type: "text"; text: string }[] }[] {
+  return (history || [])
+    .filter(
+      (h) =>
+        h &&
+        (h.role === "user" || h.role === "assistant") &&
+        typeof h.content === "string" &&
+        h.content.trim().length > 0
+    )
+    .slice(-20)
+    .map((h) => ({
+      role: h.role,
+      content: [{ type: "text", text: h.content }],
+    }));
 }
 
-// ===== Invocação =====
-export async function invokeHaiku(args: InvokeArgs): Promise<string> {
-  const {
-    message,
-    history = [],
-    maxTokens = 1000,
-    temperature = 0.2,
-    topP = 0.9,
-  } = args;
-
-  if (!INFERENCE_PROFILE_ARN) {
-    throw new Error("Inference Profile ARN não definido.");
-  }
-
-  const payload = JSON.stringify({
-    anthropic_version: "bedrock-2023-05-31",
-    max_tokens: maxTokens,
-    temperature,
-    top_p: topP,
-    messages: [
-      ...history.map((m) => ({
-        role: m.role,
-        content: [{ type: "text", text: m.content }],
-      })),
-      { role: "user", content: [{ type: "text", text: message }] },
-    ],
-  });
-
-  const creds = await getAwsCredentials();
-  const { headers } = signSigV4({
-    method: "POST",
-    path: `/model/${MODEL_ID}/invoke`,
-    host: HOST,
-    region: REGION,
-    service: SERVICE,
-    payload,
-    creds,
-  });
-
-  // Timeout de rede
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
-  let res: Response;
+function extractText(raw: string): string {
+  if (!raw) return "[sem texto]";
   try {
-    res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers,
-      body: payload,
-      signal: controller.signal,
-    });
-  } catch (err: any) {
-    clearTimeout(timer);
-    if (err?.name === "AbortError") throw new Error("Timeout ao chamar o Bedrock (30s).");
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-
-  const rawText = await res.text().catch(() => "");
-  if (!res.ok) {
-    throw new Error(`Bedrock HTTP ${res.status}: ${rawText || res.statusText}`);
-  }
-
-  // Extração tolerante
-  try {
-    const parsed: any = rawText ? JSON.parse(rawText) : {};
-    const reply =
+    const parsed: any = JSON.parse(raw);
+    const text =
       parsed?.content?.[0]?.text ??
       parsed?.message?.content?.[0]?.text ??
       parsed?.output_text ??
       parsed?.completion ??
       "";
-    return (reply || "[sem texto]").toString().trim();
+    const out = (text ?? "").toString().trim();
+    return out || "[sem texto]";
   } catch {
-    return rawText.trim() || "[sem texto]";
+    // Em raros casos o serviço pode retornar texto plano
+    return raw.trim() || "[sem texto]";
   }
+}
+
+// ===== Invocação =====
+export async function invokeHaiku({
+  message,
+  history = [],
+  maxTokens = 1000,
+  temperature = 0.2,
+  topP = 0.9,
+  timeoutMs = 30_000,
+}: InvokeArgs): Promise<string> {
+  if (!RESOLVED_MODEL_ID) {
+    throw new Error(
+      "ModelId/InferenceProfile não configurado (defina BEDROCK_MODEL_ID ou BEDROCK_INFERENCE_PROFILE_ARN)."
+    );
+  }
+
+  const payload = {
+    anthropic_version: "bedrock-2023-05-31",
+    max_tokens: maxTokens,
+    temperature,
+    top_p: topP,
+    messages: [
+      ...sanitizeHistory(history),
+      { role: "user", content: [{ type: "text", text: String(message ?? "").trim() }] },
+    ],
+  };
+
+  const cmd = new InvokeModelCommand({
+    modelId: RESOLVED_MODEL_ID, // aceita tanto 'anthropic.claude-...' quanto ARN de inference-profile
+    contentType: "application/json",
+    accept: "application/json",
+    body: JSON.stringify(payload),
+  });
+
+  // Timeout com AbortController (preserva comportamento do original)
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let respBody: Uint8Array | undefined;
+
+  try {
+    const resp = await bedrock.send(cmd, { abortSignal: controller.signal });
+    respBody = resp.body as Uint8Array;
+  } catch (err: any) {
+    const code = err?.$metadata?.httpStatusCode;
+    const name = err?.name || err?.Code || err?.code || "BedrockError";
+    const msg = err?.message || JSON.stringify(err);
+    if (name === "AbortError") {
+      throw new Error(`Timeout ao chamar o Bedrock (${Math.round(timeoutMs / 1000)}s).`);
+    }
+    throw new Error(`Falha ao invocar Bedrock (${code ?? "?"}/${name}): ${msg}`);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const text = new TextDecoder().decode(respBody ?? new Uint8Array());
+  return extractText(text);
 }
