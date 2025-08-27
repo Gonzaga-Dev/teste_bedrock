@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, FormEvent } from "react";
 import styles from "./page.module.css";
 
 const LEGEND =
-  "Quanto mais detalhes você der, mais preciso fica o match. O que você busca hoje?";
+  "Quanto mais detalhes forem fornecidos, mais preciso será o match. Que tipo de profissional você busca hoje?";
+
 type Msg = { role: "user" | "assistant"; content: string };
 
 export default function Page() {
@@ -13,14 +14,14 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  // Campos do formulário (controlados)
+  // Campos do formulário
   const [titulo, setTitulo] = useState("");
   const [studio, setStudio] = useState("Data&IA");
   const [senioridade, setSenioridade] = useState("Trainee");
   const [techs, setTechs] = useState("");
   const [descricao, setDescricao] = useState("");
 
-  // typing effect na legenda
+  // Efeito de digitação na legenda
   useEffect(() => {
     let i = 0;
     const id = setInterval(() => {
@@ -35,48 +36,47 @@ export default function Page() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  function buildPrompt() {
+    const brief =
+      `Título: ${titulo.trim() || "-"}\n` +
+      `Studio: ${studio}\n` +
+      `Senioridade: ${senioridade}\n` +
+      `Tecnologias: ${techs.trim() || "-"}\n` +
+      `Descrição: ${descricao.trim() || "-"}`;
+
+    return (
+      "Encontre candidatos que melhor atendam à vaga abaixo. " +
+      "Considere aderência técnica e senioridade. Responda com uma lista enxuta e justificativas.\n\n" +
+      brief
+    );
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (loading) return;
 
-    // Monta um “brief” conciso pro modelo (ou troque por JSON)
-    const brief =
-      `Título: ${titulo || "-"}\n` +
-      `Studio: ${studio}\n` +
-      `Senioridade: ${senioridade}\n` +
-      `Tecnologias: ${techs || "-"}\n` +
-      `Descrição: ${descricao || "-"}`;
+    const prompt = buildPrompt();
+    const history = [...messages, { role: "user", content: prompt } as Msg].slice(-20);
 
-    const userMsg: Msg = {
-      role: "user",
-      content:
-        "Encontre candidatos que melhor atendam à vaga abaixo. " +
-        "Considere aderência técnica e senioridade. Responda com uma lista enxuta e justificativas.\n\n" +
-        brief,
-    };
-
-    const history = [...messages, userMsg].slice(-20);
-    setMessages(history);
+    setMessages(history); // mantém histórico para o modelo (não renderizamos o 'user')
     setLoading(true);
 
     try {
-      const res = await fetch("/api/chat", {
+      const r = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg.content, history }),
+        body: JSON.stringify({ message: prompt, history }),
       });
 
-      let reply: string;
+      let reply = "⚠️ Resposta vazia do servidor";
       try {
-        const data = await res.json();
-        reply =
-          (!res.ok && data?.error && `⚠️ ${data.error}`) ||
-          (data?.reply ?? "⚠️ Resposta vazia do servidor");
+        const data = await r.json();
+        reply = (!r.ok && data?.error && `⚠️ ${data.error}`) || String(data?.reply ?? reply);
       } catch {
-        reply = `⚠️ Falha ao parsear resposta (${res.status} ${res.statusText})`;
+        reply = `⚠️ Falha ao parsear resposta (${r.status} ${r.statusText})`;
       }
 
-      setMessages((m) => [...m, { role: "assistant", content: reply.toString() }]);
+      setMessages((m) => [...m, { role: "assistant", content: reply }]);
     } catch (err: any) {
       setMessages((m) => [
         ...m,
@@ -92,10 +92,10 @@ export default function Page() {
       {/* Header */}
       <header className={styles.header}>
         <h1 className={styles.title}>Talent Match Making</h1>
-        <div className={styles.legend}>
+        <p className={styles.legend}>
           {legend}
           <span className={styles.caret} aria-hidden="true" />
-        </div>
+        </p>
       </header>
 
       {/* Form */}
@@ -104,7 +104,6 @@ export default function Page() {
           <label htmlFor="titulo">Título da vaga</label>
           <input
             id="titulo"
-            type="text"
             className={styles.input}
             placeholder="Ex.: Cientista de Dados Pleno"
             value={titulo}
@@ -147,7 +146,6 @@ export default function Page() {
           <label htmlFor="techs">Tecnologias</label>
           <input
             id="techs"
-            type="text"
             className={styles.input}
             placeholder="Ex.: Python, Spark, AWS, SQL"
             value={techs}
@@ -173,16 +171,20 @@ export default function Page() {
         </div>
       </form>
 
-      {/* Resultados */}
+      {/* Respostas (apenas assistant) */}
       <section className={styles.card}>
-        {messages.length === 0 && !loading && (
+        {messages.filter((m) => m.role === "assistant").length === 0 && !loading && (
           <div className={styles.placeholder}>Os resultados aparecerão aqui.</div>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={`${styles.msg} ${m.role === "user" ? styles.user : styles.assistant}`}>
-            {m.content}
-          </div>
-        ))}
+
+        {messages
+          .filter((m) => m.role === "assistant")
+          .map((m, i) => (
+            <div key={i} className={`${styles.msg} ${styles.assistant}`}>
+              {m.content}
+            </div>
+          ))}
+
         {loading && <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>}
         <div ref={endRef} />
       </section>
