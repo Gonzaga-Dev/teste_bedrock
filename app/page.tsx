@@ -3,15 +3,22 @@
 import { useEffect, useRef, useState, FormEvent } from "react";
 import styles from "./page.module.css";
 
-const LEGEND = "Quanto mais detalhes você der, mais preciso fica o match. O que você busca hoje?";
+const LEGEND =
+  "Quanto mais detalhes você der, mais preciso fica o match. O que você busca hoje?";
 type Msg = { role: "user" | "assistant"; content: string };
 
 export default function Page() {
   const [legend, setLegend] = useState("");
-  const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  // Campos do formulário (controlados)
+  const [titulo, setTitulo] = useState("");
+  const [studio, setStudio] = useState("Data&IA");
+  const [senioridade, setSenioridade] = useState("Trainee");
+  const [techs, setTechs] = useState("");
+  const [descricao, setDescricao] = useState("");
 
   // typing effect na legenda
   useEffect(() => {
@@ -28,21 +35,35 @@ export default function Page() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  async function handleSend(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const text = input.trim();
-    if (!text || loading) return;
+    if (loading) return;
 
-    const history = [...messages, { role: "user", content: text } as Msg].slice(-20);
+    // Monta um “brief” conciso pro modelo (ou troque por JSON)
+    const brief =
+      `Título: ${titulo || "-"}\n` +
+      `Studio: ${studio}\n` +
+      `Senioridade: ${senioridade}\n` +
+      `Tecnologias: ${techs || "-"}\n` +
+      `Descrição: ${descricao || "-"}`;
+
+    const userMsg: Msg = {
+      role: "user",
+      content:
+        "Encontre candidatos que melhor atendam à vaga abaixo. " +
+        "Considere aderência técnica e senioridade. Responda com uma lista enxuta e justificativas.\n\n" +
+        brief,
+    };
+
+    const history = [...messages, userMsg].slice(-20);
     setMessages(history);
-    setInput("");
     setLoading(true);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history }),
+        body: JSON.stringify({ message: userMsg.content, history }),
       });
 
       let reply: string;
@@ -78,15 +99,27 @@ export default function Page() {
       </header>
 
       {/* Form */}
-      <form className={styles.form} onSubmit={handleSend}>
+      <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.field}>
           <label htmlFor="titulo">Título da vaga</label>
-          <input id="titulo" type="text" className={styles.input} placeholder="Ex.: Cientista de Dados Pleno" />
+          <input
+            id="titulo"
+            type="text"
+            className={styles.input}
+            placeholder="Ex.: Cientista de Dados Pleno"
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+          />
         </div>
 
         <div className={styles.field}>
           <label htmlFor="studio">Innovation Studio</label>
-          <select id="studio" className={styles.input}>
+          <select
+            id="studio"
+            className={styles.input}
+            value={studio}
+            onChange={(e) => setStudio(e.target.value)}
+          >
             <option>Data&IA</option>
             <option>Modern Apps</option>
             <option>Gaming / XR</option>
@@ -96,7 +129,12 @@ export default function Page() {
 
         <div className={styles.field}>
           <label htmlFor="senioridade">Senioridade da vaga</label>
-          <select id="senioridade" className={styles.input}>
+          <select
+            id="senioridade"
+            className={styles.input}
+            value={senioridade}
+            onChange={(e) => setSenioridade(e.target.value)}
+          >
             <option>Trainee</option>
             <option>Júnior</option>
             <option>Pleno</option>
@@ -112,6 +150,8 @@ export default function Page() {
             type="text"
             className={styles.input}
             placeholder="Ex.: Python, Spark, AWS, SQL"
+            value={techs}
+            onChange={(e) => setTechs(e.target.value)}
           />
         </div>
 
@@ -121,6 +161,8 @@ export default function Page() {
             id="desc"
             className={`${styles.input} ${styles.textarea}`}
             placeholder="Contexto do projeto, requisitos desejáveis, diferenciais…"
+            value={descricao}
+            onChange={(e) => setDescricao(e.target.value)}
           />
         </div>
 
@@ -131,7 +173,7 @@ export default function Page() {
         </div>
       </form>
 
-      {/* Chat / Resultado */}
+      {/* Resultados */}
       <section className={styles.card}>
         {messages.length === 0 && !loading && (
           <div className={styles.placeholder}>Os resultados aparecerão aqui.</div>
@@ -144,20 +186,6 @@ export default function Page() {
         {loading && <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>}
         <div ref={endRef} />
       </section>
-
-      {/* Input do chat “livre” (se quiser conversar com o modelo) */}
-      <form onSubmit={handleSend} className={styles.inputBar}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Escreva uma pergunta ou refine sua busca…"
-          className={styles.textInput}
-          disabled={loading}
-        />
-        <button type="submit" className={styles.sendBtn} aria-label="Enviar" disabled={loading}>
-          ➤
-        </button>
-      </form>
     </div>
   );
 }
