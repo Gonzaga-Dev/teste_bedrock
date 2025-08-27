@@ -32,7 +32,7 @@
 
 .field { display: flex; flex-direction: column; gap: 8px; }
 .fieldFull { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
-label { font-size: 13px; color: #334155; font-weight: 600; }
+.form label { font-size: 13px; color: #334155; font-weight: 600; }
 
 .input {
   border: 1px solid #d1d5db;
