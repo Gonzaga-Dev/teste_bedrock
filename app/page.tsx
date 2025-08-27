@@ -1,31 +1,26 @@
 "use client";
 
-import { useState, FormEvent, useEffect, useRef } from "react";
+import { useEffect, useRef, useState, FormEvent } from "react";
 import styles from "./page.module.css";
 
-const LEGEND = "Sou o MX Lakinho, seu amiguinho. Posso ajudar?";
-type Msg = { role: "assistant"; content: string };
+const LEGEND = "Quanto mais detalhes você der, mais preciso fica o match. O que você busca hoje?";
+type Msg = { role: "user" | "assistant"; content: string };
 
-export default function App() {
+export default function Page() {
   const [legend, setLegend] = useState("");
-  const [formData, setFormData] = useState({
-    jobTitle: "",
-    studio: "Data&IA",
-    seniority: "Trainee",
-    technologies: "",
-    description: "",
-  });
+  const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
+  // typing effect na legenda
   useEffect(() => {
     let i = 0;
     const id = setInterval(() => {
       setLegend(LEGEND.slice(0, i + 1));
       i++;
       if (i >= LEGEND.length) clearInterval(id);
-    }, 35);
+    }, 25);
     return () => clearInterval(id);
   }, []);
 
@@ -33,26 +28,21 @@ export default function App() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  }
-
-  async function handleSubmit(e: FormEvent) {
+  async function handleSend(e: FormEvent) {
     e.preventDefault();
-    if (loading) return;
-    const { jobTitle, studio, seniority, technologies, description } = formData;
+    const text = input.trim();
+    if (!text || loading) return;
 
-    const prompt = `Me indique os 5 candidatos mais adequados para a vaga de "${jobTitle}", que seja preferencialmente do studio ${studio}, tenha senioridade ${seniority}, domine ${technologies} e seja aderente à ${description}`;
-
-    setMessages([{ role: "assistant", content: prompt }]);
+    const history = [...messages, { role: "user", content: text } as Msg].slice(-20);
+    setMessages(history);
+    setInput("");
     setLoading(true);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt, history: [] }),
+        body: JSON.stringify({ message: text, history }),
       });
 
       let reply: string;
@@ -69,10 +59,7 @@ export default function App() {
     } catch (err: any) {
       setMessages((m) => [
         ...m,
-        {
-          role: "assistant",
-          content: `Falhou ao contactar o modelo: ${err?.message || err}`,
-        },
+        { role: "assistant", content: `Falhou ao contactar o modelo: ${err?.message || err}` },
       ]);
     } finally {
       setLoading(false);
@@ -81,77 +68,96 @@ export default function App() {
 
   return (
     <div className={styles.wrapper}>
+      {/* Header */}
       <header className={styles.header}>
         <h1 className={styles.title}>Talent Match Making</h1>
         <div className={styles.legend}>
           {legend}
-          <span className={styles.caret} />
-        </div>
-        <div className={styles.subtitle}>
-          Quanto mais detalhes forem inseridos, mais precisa será a busca. Que tipo de profissional você está em busca hoje?
+          <span className={styles.caret} aria-hidden="true" />
         </div>
       </header>
 
-      <form onSubmit={handleSubmit} className={styles.form}>
+      {/* Form */}
+      <form className={styles.form} onSubmit={handleSend}>
         <div className={styles.field}>
-          <label>Título da vaga:</label>
-          <input
-            type="text"
-            name="jobTitle"
-            value={formData.jobTitle}
-            onChange={handleChange}
-            required
-          />
+          <label htmlFor="titulo">Título da vaga</label>
+          <input id="titulo" type="text" className={styles.input} placeholder="Ex.: Cientista de Dados Pleno" />
         </div>
+
         <div className={styles.field}>
-          <label>Innovation Studio:</label>
-          <select name="studio" value={formData.studio} onChange={handleChange}>
-            <option value="Data&IA">Data&IA</option>
-            <option value="Modern Applications">Modern Applications</option>
-            <option value="Outros">Outros</option>
+          <label htmlFor="studio">Innovation Studio</label>
+          <select id="studio" className={styles.input}>
+            <option>Data&IA</option>
+            <option>Modern Apps</option>
+            <option>Gaming / XR</option>
+            <option>Cloud</option>
           </select>
         </div>
+
         <div className={styles.field}>
-          <label>Senioridade da vaga:</label>
-          <select name="seniority" value={formData.seniority} onChange={handleChange}>
-            <option value="Trainee">Trainee</option>
-            <option value="Junior">Junior</option>
-            <option value="Pleno">Pleno</option>
-            <option value="Senior">Senior</option>
-            <option value="Especialista">Especialista</option>
+          <label htmlFor="senioridade">Senioridade da vaga</label>
+          <select id="senioridade" className={styles.input}>
+            <option>Trainee</option>
+            <option>Júnior</option>
+            <option>Pleno</option>
+            <option>Sênior</option>
+            <option>Especialista</option>
           </select>
         </div>
+
         <div className={styles.field}>
-          <label>Tecnologias:</label>
+          <label htmlFor="techs">Tecnologias</label>
           <input
+            id="techs"
             type="text"
-            name="technologies"
-            value={formData.technologies}
-            onChange={handleChange}
+            className={styles.input}
+            placeholder="Ex.: Python, Spark, AWS, SQL"
           />
         </div>
-        <div className={styles.field}>
-          <label>Descrição das atividades:</label>
+
+        <div className={styles.fieldFull}>
+          <label htmlFor="desc">Descrição das atividades</label>
           <textarea
-            name="description"
-            value={formData.description}
-            onChange={handleChange}
-            rows={4}
+            id="desc"
+            className={`${styles.input} ${styles.textarea}`}
+            placeholder="Contexto do projeto, requisitos desejáveis, diferenciais…"
           />
         </div>
-        <button type="submit" disabled={loading}>
-          {loading ? "Enviando…" : "Buscar candidatos"}
-        </button>
+
+        <div className={styles.actions}>
+          <button type="submit" className={styles.button} disabled={loading}>
+            {loading ? "Buscando…" : "Buscar candidatos"}
+          </button>
+        </div>
       </form>
 
-      <section className={styles.chat}>
+      {/* Chat / Resultado */}
+      <section className={styles.card}>
+        {messages.length === 0 && !loading && (
+          <div className={styles.placeholder}>Os resultados aparecerão aqui.</div>
+        )}
         {messages.map((m, i) => (
-          <div key={i} className={`${styles.msg} ${styles.assistant}`}>
+          <div key={i} className={`${styles.msg} ${m.role === "user" ? styles.user : styles.assistant}`}>
             {m.content}
           </div>
         ))}
+        {loading && <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>}
         <div ref={endRef} />
       </section>
+
+      {/* Input do chat “livre” (se quiser conversar com o modelo) */}
+      <form onSubmit={handleSend} className={styles.inputBar}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Escreva uma pergunta ou refine sua busca…"
+          className={styles.textInput}
+          disabled={loading}
+        />
+        <button type="submit" className={styles.sendBtn} aria-label="Enviar" disabled={loading}>
+          ➤
+        </button>
+      </form>
     </div>
   );
 }
