@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, FormEvent } from "react";
+import { useState, FormEvent, useEffect, useRef } from "react";
 import styles from "./page.module.css";
 
 const LEGEND = "Sou o MX Lakinho, seu amiguinho. Posso ajudar?";
-type Msg = { role: "user" | "assistant"; content: string };
+type Msg = { role: "assistant"; content: string };
 
 export default function App() {
   const [legend, setLegend] = useState("");
-  const [input, setInput] = useState("");
+  const [formData, setFormData] = useState({
+    jobTitle: "",
+    studio: "Data&IA",
+    seniority: "Trainee",
+    technologies: "",
+    description: "",
+  });
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -27,21 +33,26 @@ export default function App() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  async function handleSend(e: FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text || loading) return;
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  }
 
-    const newHistory = [...messages, { role: "user", content: text } as Msg].slice(-20);
-    setMessages(newHistory);
-    setInput("");
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (loading) return;
+    const { jobTitle, studio, seniority, technologies, description } = formData;
+
+    const prompt = `Me indique os 5 candidatos mais adequados para a vaga de "${jobTitle}", que seja preferencialmente do studio ${studio}, tenha senioridade ${seniority}, domine ${technologies} e seja aderente à ${description}`;
+
+    setMessages([{ role: "assistant", content: prompt }]);
     setLoading(true);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: newHistory }),
+        body: JSON.stringify({ message: prompt, history: [] }),
       });
 
       let reply: string;
@@ -58,7 +69,10 @@ export default function App() {
     } catch (err: any) {
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: `Falhou ao contactar o modelo: ${err?.message || err}` },
+        {
+          role: "assistant",
+          content: `Falhou ao contactar o modelo: ${err?.message || err}`,
+        },
       ]);
     } finally {
       setLoading(false);
@@ -73,38 +87,71 @@ export default function App() {
           {legend}
           <span className={styles.caret} />
         </div>
+        <div className={styles.subtitle}>
+          Quanto mais detalhes forem inseridos, mais precisa será a busca. Que tipo de profissional você está em busca hoje?
+        </div>
       </header>
 
+      <form onSubmit={handleSubmit} className={styles.form}>
+        <div className={styles.field}>
+          <label>Título da vaga:</label>
+          <input
+            type="text"
+            name="jobTitle"
+            value={formData.jobTitle}
+            onChange={handleChange}
+            required
+          />
+        </div>
+        <div className={styles.field}>
+          <label>Innovation Studio:</label>
+          <select name="studio" value={formData.studio} onChange={handleChange}>
+            <option value="Data&IA">Data&IA</option>
+            <option value="Modern Applications">Modern Applications</option>
+            <option value="Outros">Outros</option>
+          </select>
+        </div>
+        <div className={styles.field}>
+          <label>Senioridade da vaga:</label>
+          <select name="seniority" value={formData.seniority} onChange={handleChange}>
+            <option value="Trainee">Trainee</option>
+            <option value="Junior">Junior</option>
+            <option value="Pleno">Pleno</option>
+            <option value="Senior">Senior</option>
+            <option value="Especialista">Especialista</option>
+          </select>
+        </div>
+        <div className={styles.field}>
+          <label>Tecnologias:</label>
+          <input
+            type="text"
+            name="technologies"
+            value={formData.technologies}
+            onChange={handleChange}
+          />
+        </div>
+        <div className={styles.field}>
+          <label>Descrição das atividades:</label>
+          <textarea
+            name="description"
+            value={formData.description}
+            onChange={handleChange}
+            rows={4}
+          />
+        </div>
+        <button type="submit" disabled={loading}>
+          {loading ? "Enviando…" : "Buscar candidatos"}
+        </button>
+      </form>
+
       <section className={styles.chat}>
-        {messages.length === 0 && !loading && (
-          <div className={styles.placeholder}>Envie uma mensagem para começar.</div>
-        )}
         {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`${styles.msg} ${m.role === "user" ? styles.user : styles.assistant}`}
-          >
+          <div key={i} className={`${styles.msg} ${styles.assistant}`}>
             {m.content}
           </div>
         ))}
-        {loading && (
-          <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>
-        )}
         <div ref={endRef} />
       </section>
-
-      <form onSubmit={handleSend} className={styles.inputBar}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Digite sua mensagem…"
-          className={styles.textInput}
-          disabled={loading}
-        />
-        <button type="submit" className={styles.sendBtn} aria-label="Enviar" disabled={loading}>
-          ➤
-        </button>
-      </form>
     </div>
   );
 }
