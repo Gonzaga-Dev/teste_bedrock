@@ -10,11 +10,12 @@ const REGION =
   process.env.AWS_DEFAULT_REGION ||
   "us-east-1";
 
-// Preferir MODEL_ID; se ausente, cair para PROFILE ARN; senão usar um default seguro em us-east-1.
+// depois (preferir profile)
 const RESOLVED_MODEL_ID =
-  process.env.BEDROCK_MODEL_ID?.trim() ||
   process.env.BEDROCK_INFERENCE_PROFILE_ARN?.trim() ||
-  "anthropic.claude-3-5-haiku-20241022-v1:0";
+  process.env.BEDROCK_MODEL_ID?.trim() ||
+  "arn:aws:bedrock:us-east-1:299276366441:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0";
+
 
 // -------- Credenciais (opcionalmente via env custom) --------
 // Em produção no Amplify, NÃO defina chaves; deixe a role SSR prover.
