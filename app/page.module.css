@@ -2,36 +2,17 @@
   max-width: 1080px;
   margin: 0 auto;
   padding: 32px 20px 48px;
-  background: #f7f9fb;
+  background: var(--surface-contrast);
   min-height: 100vh;
 }
 
 /* Header */
-.header {
-  text-align: center;
-  margin-bottom: 20px;
-}
-.title {
-  font-size: 34px;
-  line-height: 1.15;
-  margin: 0;
-  font-weight: 800;
-  color: #0f172a;
-}
-.legend {
-  margin: 8px auto 0;
-  color: #475569;
-  min-height: 22px;
-  max-width: 760px;
-}
+.header { text-align: center; margin-bottom: 20px; }
+.title { font-size: 34px; line-height: 1.15; margin: 0; font-weight: 800; color: var(--text); }
+.legend { margin: 8px auto 0; color: var(--text-muted); min-height: 22px; max-width: 760px; }
 .caret {
-  display: inline-block;
-  width: 10px;
-  height: 1.15em;
-  margin-left: 2px;
-  background: #94a3b8;
-  animation: blink 1s steps(1, end) infinite;
-  vertical-align: text-bottom;
+  display: inline-block; width: 10px; height: 1.15em; margin-left: 2px;
+  background: var(--text-muted); animation: blink 1s steps(1, end) infinite; vertical-align: text-bottom;
 }
 @keyframes blink { 50% { opacity: 0; } }
 
@@ -40,61 +21,43 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px 20px;
-  background: #ffffff;
+  background: var(--surface);
   padding: 18px;
   border-radius: 14px;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   margin-bottom: 18px;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.fieldFull {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.field { display: flex; flex-direction: column; gap: 8px; }
+.fieldFull { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
 
 /* uso escopado para CSS Modules */
-.form label {
-  font-size: 13px;
-  color: #334155;
-  font-weight: 600;
-}
+.form label { font-size: 13px; color: var(--neutral-600); font-weight: 600; }
 
 .input {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 14px;
-  background: #fff;
+  background: var(--surface);
+  color: var(--text);
   outline: none;
   min-height: 40px;
 }
-.input:focus,
-.input:focus-visible {
-  border-color: #60a5fa;
-  box-shadow: 0 0 0 3px rgba(96,165,250,.25);
+.input::placeholder { color: var(--text-muted); }
+.input:focus, .input:focus-visible {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--focus) 35%, transparent);
+  outline: none; /* evita anel global duplicado */
 }
 
-.textarea {
-  min-height: 120px;
-  resize: vertical;
-}
+.textarea { min-height: 120px; resize: vertical; }
 
 /* Ações */
-.actions {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: flex-end;
-}
+.actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
 .button {
-  background: #111827;
+  background: var(--brand-600);
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -102,35 +65,41 @@
   font-weight: 600;
   cursor: pointer;
   min-height: 40px;
+  transition: transform .05s ease, filter .15s ease, background .15s ease;
 }
 .button:disabled { opacity: .6; cursor: not-allowed; }
 .button:hover:not(:disabled),
-.button:focus-visible:not(:disabled) { background: #0b1220; }
+.button:focus-visible:not(:disabled) {
+  background: var(--brand-500);
+  outline: none; /* evita anel global duplicado */
+}
+.button:active { transform: translateY(1px); }
 
 /* Resultados */
 .card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px;
   min-height: 280px;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
 }
 
-.placeholder { color: #94a3b8; font-size: 14px; }
+.placeholder { color: var(--text-muted); font-size: 14px; }
 
 /* Mensagens do modelo */
 .msg {
   padding: 12px 14px;
   border-radius: 10px;
-  margin: 10px 0; /* respiro coerente */
+  margin: 10px 0;
   font-size: 14px;
   line-height: 1.5;
 }
 .assistant {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: color-mix(in oklab, var(--brand-500) 6%, var(--surface));
+  color: var(--text);
   white-space: pre-line; /* preserva \n vindos do modelo */
+  border: 1px solid color-mix(in oklab, var(--brand-500) 18%, var(--border));
 }
 
 /* Responsivo */
