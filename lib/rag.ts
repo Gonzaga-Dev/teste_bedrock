@@ -14,21 +14,16 @@ const REGION =
 
 const KB_ID = process.env.BEDROCK_KB_ID?.trim();
 const PROFILE_ARN = process.env.BEDROCK_INFERENCE_PROFILE_ARN?.trim();
-// Sempre informe um modelArn para satisfazer o shape do SDK
 const MODEL_ARN =
   process.env.BEDROCK_MODEL_ARN?.trim() ||
   "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0";
 
 const client = new BedrockAgentRuntimeClient({ region: REGION });
 
-export async function ragWithKB(
-  query: string,
-  opts?: { maxTokens?: number; temperature?: number; topP?: number }
-) {
+export async function ragWithKB(query: string) {
   if (!KB_ID) throw new Error("BEDROCK_KB_ID não configurado.");
 
-  // Alguns releases do SDK exigem modelArn; se houver profile, enviamos ambos.
-  const kbCfg: NonNullable<
+  const retrieveAndGenerateConfiguration: NonNullable<
     RetrieveAndGenerateCommandInput["retrieveAndGenerateConfiguration"]
   > = {
     type: "KNOWLEDGE_BASE",
@@ -41,14 +36,8 @@ export async function ragWithKB(
 
   const input: RetrieveAndGenerateCommandInput = {
     input: { text: query },
-    retrieveAndGenerateConfiguration: kbCfg,
-    inferenceConfig: {
-      textInferenceConfig: {
-        maxTokens: opts?.maxTokens ?? 1024,
-        temperature: opts?.temperature ?? 0.2,
-        topP: opts?.topP ?? 0.9,
-      },
-    },
+    retrieveAndGenerateConfiguration,
+    // Sem inferenceConfig por compatibilidade de tipos do SDK
   };
 
   const resp = await client.send(new RetrieveAndGenerateCommand(input));
