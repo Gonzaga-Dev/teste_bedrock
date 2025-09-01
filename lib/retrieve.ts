@@ -12,13 +12,12 @@ const REGION =
   process.env.AWS_DEFAULT_REGION ||
   "us-east-1";
 
-// Instanciar o client é seguro mesmo sem KB_ID
+// Hardcode da KB (exclusiva)
+const KB_ID = "1YKO0N8MIV";
+
 const client = new BedrockAgentRuntimeClient({ region: REGION });
 
-export type RetrievedChunk = {
-  text: string;
-  source?: string;
-};
+export type RetrievedChunk = { text: string; source?: string };
 
 function toStringSafe(x: unknown): string | undefined {
   if (typeof x === "string") return x;
@@ -39,17 +38,11 @@ function toStringSafe(x: unknown): string | undefined {
   return undefined;
 }
 
-/** Busca n trechos relevantes da KB para a query. */
+/** Busca n trechos relevantes da KB para a query (base vetorial). */
 export async function retrieveFromKB(
   query: string,
-  { maxResults = 6, minScore = 0.0 }: { maxResults?: number; minScore?: number } = {}
+  { maxResults = 12, minScore = 0.0 }: { maxResults?: number; minScore?: number } = {}
 ): Promise<RetrievedChunk[]> {
-  const KB_ID = process.env.BEDROCK_KB_ID?.trim();
-  if (!KB_ID) {
-    // Não estoura na importação; só aqui, quando de fato foi pedido retrieve
-    throw new Error("BEDROCK_KB_ID não configurado.");
-  }
-
   const input: RetrieveCommandInput = {
     knowledgeBaseId: KB_ID,
     retrievalQuery: { text: query },
