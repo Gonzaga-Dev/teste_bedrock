@@ -1,6 +1,7 @@
 // app/api/chat/route.ts
 import { NextResponse } from "next/server";
 import { invokeHaiku, type Msg } from "@/lib/bedrock";
+import { ragWithKB } from "@/lib/rag"; // <- novo helper de RAG com KB
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,8 +32,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "message vazio" }, { status: 400 });
     }
 
-    // Diagnóstico de credenciais (apenas booleans; não vaza segredos)
+    const useKb = !!process.env.BEDROCK_KB_ID?.trim();
     const flags = {
+      kb: useKb ? "on" : "off",
+      profile: !!process.env.BEDROCK_INFERENCE_PROFILE_ARN?.trim(),
+      modelId: !!process.env.BEDROCK_MODEL_ID?.trim(),
       bedrockEnv:
         !!process.env.BEDROCK_ACCESS_KEY_ID &&
         !!process.env.BEDROCK_SECRET_ACCESS_KEY,
@@ -46,19 +50,31 @@ export async function POST(req: Request) {
     };
     console.log("CHAT flags:", flags);
 
-    const reply = await invokeHaiku({ message, history });
-    return NextResponse.json({ reply }, { status: 200 });
+    if (useKb) {
+      // RAG: RetrieveAndGenerate com a KB configurada
+      const { text, citations } = await ragWithKB(message, {
+        maxTokens: 1024,
+        temperature: 0.2,
+        topP: 0.9,
+      });
+      const suffix = citations?.length ? `\n\n${citations.join("\n")}` : "";
+      return NextResponse.json({ reply: `${text}${suffix}` }, { status: 200 });
+    } else {
+      // Fallback: modelo direto (Claude 3.5 Haiku via inference profile)
+      const reply = await invokeHaiku({ message, history });
+      return NextResponse.json({ reply }, { status: 200 });
+    }
   } catch (e: any) {
     const msg = (e?.message || "erro").toString();
     return NextResponse.json(
       { error: msg, reply: `Erro do servidor: ${msg}` },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
 
 // --- GET /api/chat ---
-// Endpoint de debug para verificar de onde as credenciais viriam neste handler.
+// Endpoint de debug para verificar credenciais e feature flags.
 export async function GET() {
   return NextResponse.json(
     {
@@ -72,8 +88,11 @@ export async function GET() {
         !!process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI,
       region:
         process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "unknown",
+      kbId: process.env.BEDROCK_KB_ID ? "set" : "unset",
+      profile: process.env.BEDROCK_INFERENCE_PROFILE_ARN ? "set" : "unset",
+      modelId: process.env.BEDROCK_MODEL_ID ? "set" : "unset",
       ok: true,
     },
-    { status: 200 },
+    { status: 200 }
   );
 }
