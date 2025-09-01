@@ -1,13 +1,13 @@
 // app/api/chat/route.ts
 import { NextResponse } from "next/server";
 import { invokeHaiku, type Msg } from "@/lib/bedrock";
-import { ragWithKB } from "@/lib/rag"; // <- novo helper de RAG com KB
+import { retrieveFromKB } from "@/lib/retrieve"; // RAG manual (só retrieve)
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const preferredRegion = "us-east-1";
 
-// --- util ---
+// --- utils ---
 function toMsgArray(x: unknown): Msg[] {
   if (!Array.isArray(x)) return [];
   return x
@@ -21,6 +21,11 @@ function toMsgArray(x: unknown): Msg[] {
     .filter((m) => m.content.trim() !== "");
 }
 
+function truncate(s: string, max = 2000) {
+  if (s.length <= max) return s;
+  return s.slice(0, max) + " …";
+}
+
 // --- POST /api/chat ---
 export async function POST(req: Request) {
   try {
@@ -32,67 +37,67 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "message vazio" }, { status: 400 });
     }
 
-    const useKb = !!process.env.BEDROCK_KB_ID?.trim();
-    const flags = {
-      kb: useKb ? "on" : "off",
-      profile: !!process.env.BEDROCK_INFERENCE_PROFILE_ARN?.trim(),
-      modelId: !!process.env.BEDROCK_MODEL_ID?.trim(),
-      bedrockEnv:
-        !!process.env.BEDROCK_ACCESS_KEY_ID &&
-        !!process.env.BEDROCK_SECRET_ACCESS_KEY,
-      awsEnv:
-        !!process.env.AWS_ACCESS_KEY_ID &&
-        !!process.env.AWS_SECRET_ACCESS_KEY,
-      rel: process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ? "set" : "unset",
-      full: process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI ? "set" : "unset",
-      region:
-        process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "unknown",
-    };
-    console.log("CHAT flags:", flags);
+    const hasKB = !!process.env.BEDROCK_KB_ID?.trim();
 
-    if (useKb) {
-      // RAG: RetrieveAndGenerate com a KB configurada
-      const { text, citations } = await ragWithKB(message, {
-        maxTokens: 1024,
-        temperature: 0.2,
-        topP: 0.9,
-      });
-      const suffix = citations?.length ? `\n\n${citations.join("\n")}` : "";
-      return NextResponse.json({ reply: `${text}${suffix}` }, { status: 200 });
-    } else {
-      // Fallback: modelo direto (Claude 3.5 Haiku via inference profile)
-      const reply = await invokeHaiku({ message, history });
-      return NextResponse.json({ reply }, { status: 200 });
+    // 1) Recupera contexto da KB (se configurada)
+    let system: string | undefined = undefined;
+    if (hasKB) {
+      const chunks = await retrieveFromKB(message, { maxResults: 6 });
+      const contexto =
+        chunks
+          .map((c, i) =>
+            `### Trecho ${i + 1}\n${truncate(c.text, 1800)}${
+              c.source ? `\n[Fonte]: ${c.source}` : ""
+            }`,
+          )
+          .join("\n\n") || "(sem trechos relevantes da KB)";
+
+      // 2) System com instruções + contexto (você controla o “estilo”)
+      system = [
+        "Você é um assistente de seleção técnica.",
+        "Use ESTRITAMENTE o CONTEXTO abaixo para responder.",
+        "Se faltar evidência no contexto, diga isso explicitamente.",
+        "Seja conciso e traga justificativas ancoradas nos trechos.",
+        "",
+        "=== CONTEXTO ===",
+        contexto,
+      ].join("\n");
     }
+
+    // 3) Invoca o modelo com prompt custom (message) + contexto (system)
+    const reply = await invokeHaiku({
+      message,
+      history,
+      system,
+      maxTokens: 1200,
+      temperature: 0.2,
+      topP: 0.9,
+    });
+
+    return NextResponse.json({ reply }, { status: 200 });
   } catch (e: any) {
     const msg = (e?.message || "erro").toString();
     return NextResponse.json(
       { error: msg, reply: `Erro do servidor: ${msg}` },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
-// --- GET /api/chat ---
-// Endpoint de debug para verificar credenciais e feature flags.
+// --- GET /api/chat --- (diagnóstico rápido)
 export async function GET() {
   return NextResponse.json(
     {
-      hasBedrockEnv:
-        !!process.env.BEDROCK_ACCESS_KEY_ID &&
-        !!process.env.BEDROCK_SECRET_ACCESS_KEY,
-      hasAwsEnv:
-        !!process.env.AWS_ACCESS_KEY_ID && !!process.env.AWS_SECRET_ACCESS_KEY,
-      hasContainerCreds:
-        !!process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
-        !!process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI,
-      region:
-        process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "unknown",
       kbId: process.env.BEDROCK_KB_ID ? "set" : "unset",
       profile: process.env.BEDROCK_INFERENCE_PROFILE_ARN ? "set" : "unset",
       modelId: process.env.BEDROCK_MODEL_ID ? "set" : "unset",
+      region:
+        process.env.BEDROCK_REGION ||
+        process.env.AWS_REGION ||
+        process.env.AWS_DEFAULT_REGION ||
+        "us-east-1",
       ok: true,
     },
-    { status: 200 }
+    { status: 200 },
   );
 }
