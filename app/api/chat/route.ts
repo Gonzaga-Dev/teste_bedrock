@@ -1,13 +1,13 @@
 // app/api/chat/route.ts
 import { NextResponse } from "next/server";
 import { invokeHaiku, type Msg } from "@/lib/bedrock";
-import { retrieveFromKB } from "@/lib/retrieve"; // RAG manual (só retrieve)
+import { retrieveFromKB } from "@/lib/retrieve";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const preferredRegion = "us-east-1";
 
-// --- utils ---
+// utils
 function toMsgArray(x: unknown): Msg[] {
   if (!Array.isArray(x)) return [];
   return x
@@ -20,51 +20,55 @@ function toMsgArray(x: unknown): Msg[] {
     }))
     .filter((m) => m.content.trim() !== "");
 }
-
 function truncate(s: string, max = 2000) {
-  if (s.length <= max) return s;
-  return s.slice(0, max) + " …";
+  return s.length <= max ? s : s.slice(0, max) + " …";
 }
 
-// --- POST /api/chat ---
+// POST /api/chat
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const message = String(body?.message ?? "").trim();
     const history = toMsgArray(body?.history);
-
     if (!message) {
       return NextResponse.json({ error: "message vazio" }, { status: 400 });
     }
 
-    const hasKB = !!process.env.BEDROCK_KB_ID?.trim();
-
-    // 1) Recupera contexto da KB (se configurada)
-    let system: string | undefined = undefined;
-    if (hasKB) {
-      const chunks = await retrieveFromKB(message, { maxResults: 6 });
-      const contexto =
-        chunks
-          .map((c, i) =>
-            `### Trecho ${i + 1}\n${truncate(c.text, 1800)}${
-              c.source ? `\n[Fonte]: ${c.source}` : ""
-            }`,
-          )
-          .join("\n\n") || "(sem trechos relevantes da KB)";
-
-      // 2) System com instruções + contexto (você controla o “estilo”)
-      system = [
-        "Você é um assistente de seleção técnica.",
-        "Use ESTRITAMENTE o CONTEXTO abaixo para responder.",
-        "Se faltar evidência no contexto, diga isso explicitamente.",
-        "Seja conciso e traga justificativas ancoradas nos trechos.",
-        "",
-        "=== CONTEXTO ===",
-        contexto,
-      ].join("\n");
+    // 1) Recupera exclusivamente da base vetorial
+    const chunks = await retrieveFromKB(message, { maxResults: 12, minScore: 0.0 });
+    if (chunks.length === 0) {
+      return NextResponse.json(
+        {
+          reply:
+            "Sem evidências suficientes na base de conhecimento para responder com segurança. " +
+            "Refine os termos ou atualize a KB.",
+        },
+        { status: 200 }
+      );
     }
 
-    // 3) Invoca o modelo com prompt custom (message) + contexto (system)
+    const contexto = chunks
+      .map(
+        (c, i) =>
+          `### Trecho ${i + 1}\n${truncate(c.text, 1800)}${
+            c.source ? `\n[Fonte]: ${c.source}` : ""
+          }`
+      )
+      .join("\n\n");
+
+    // 2) Prompt (system) com regra de exclusividade
+    const system = [
+      "Você é um assistente de seleção técnica.",
+      "USE EXCLUSIVAMENTE as informações do CONTEXTO para responder.",
+      "É PROIBIDO inventar, completar a partir de conhecimento geral ou usar fontes externas.",
+      "Se algo solicitado não constar no CONTEXTO, responda exatamente: 'Sem evidências suficientes no contexto.'",
+      "Traga justificativas curtas citando o(s) trecho(s) (ex.: Trecho 2).",
+      "",
+      "=== CONTEXTO ===",
+      contexto,
+    ].join("\n");
+
+    // 3) Invoca o modelo com seu prompt de negócio em `message`
     const reply = await invokeHaiku({
       message,
       history,
@@ -72,6 +76,7 @@ export async function POST(req: Request) {
       maxTokens: 1200,
       temperature: 0.2,
       topP: 0.9,
+      // stopSequences: ["==="], // opcional, se quiser cortar ao fim do contexto
     });
 
     return NextResponse.json({ reply }, { status: 200 });
@@ -79,18 +84,16 @@ export async function POST(req: Request) {
     const msg = (e?.message || "erro").toString();
     return NextResponse.json(
       { error: msg, reply: `Erro do servidor: ${msg}` },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
 
-// --- GET /api/chat --- (diagnóstico rápido)
+// GET /api/chat (diagnóstico simples)
 export async function GET() {
   return NextResponse.json(
     {
-      kbId: process.env.BEDROCK_KB_ID ? "set" : "unset",
-      profile: process.env.BEDROCK_INFERENCE_PROFILE_ARN ? "set" : "unset",
-      modelId: process.env.BEDROCK_MODEL_ID ? "set" : "unset",
+      kbId: "1YKO0N8MIV",
       region:
         process.env.BEDROCK_REGION ||
         process.env.AWS_REGION ||
@@ -98,6 +101,6 @@ export async function GET() {
         "us-east-1",
       ok: true,
     },
-    { status: 200 },
+    { status: 200 }
   );
 }
