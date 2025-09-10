@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     }
 
     // 1) Recupera exclusivamente da base vetorial
-    const chunks = await retrieveFromKB(message, { maxResults: 12, minScore: 0.0 });
+    const chunks = await retrieveFromKB(message, { maxResults: 50, minScore: 0.0 });
     if (chunks.length === 0) {
       return NextResponse.json(
         { reply: "Sem evidências suficientes na base de conhecimento para responder com segurança. Refine os termos ou atualize a KB." },
