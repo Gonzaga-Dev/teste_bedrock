@@ -13,7 +13,7 @@ const REGION =
   "us-east-1";
 
 // Hardcode da KB (exclusiva)
-const KB_ID = "I3J4X6BLSA";
+const KB_ID = "N4OPVSX8NP";
 
 const client = new BedrockAgentRuntimeClient({ region: REGION });
 
