@@ -8,20 +8,49 @@ const LEGEND =
 
 type Msg = { role: "user" | "assistant"; content: string };
 
+const STUDIOS = [
+  "Agile Transformation",
+  "Modern Applications",
+  "Data & AI",
+  "Cloud & DevSecOps",
+  "Mobile Apps",
+  "Digital Commerce & Experiences",
+  "Delivery Management",
+  "Quality Engineering",
+  "Hyperautomation (RPA)",
+  "User Experience",
+  "Future Hacking",
+  "AI Cockpit",
+  "Financial Solutions",
+  "Information Security",
+  "Global Executive Management",
+  "Business Management",
+  "Internal Infrastructure & Support",
+  "Gaming, XR & Metaverse",
+  "AWS reStack",
+  "People",
+  "Communication & Marketing",
+  "Academy",
+  "Back-Office",
+  "BackOffice Revenue",
+  "Executive Management",
+  "Privacy & Compliance",
+] as const;
+
 export default function Page() {
   const [legend, setLegend] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  // Campos do formulário
+  // Form state
   const [titulo, setTitulo] = useState("");
-  const [studio, setStudio] = useState("Data&IA");
+  const [studio, setStudio] = useState<typeof STUDIOS[number]>("Data & AI");
   const [senioridade, setSenioridade] = useState("Trainee");
   const [techs, setTechs] = useState("");
   const [descricao, setDescricao] = useState("");
 
-  // Efeito de digitação na legenda
+  // Typing effect for legend
   useEffect(() => {
     let i = 0;
     const id = setInterval(() => {
@@ -32,9 +61,10 @@ export default function Page() {
     return () => clearInterval(id);
   }, []);
 
+  // Auto scroll to latest rendered msg (even que exibamos só a última)
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, loading]);
 
   function buildPrompt() {
     const brief =
@@ -56,9 +86,10 @@ export default function Page() {
     if (loading) return;
 
     const prompt = buildPrompt();
+    // mantém histórico (para o backend), mas só exibiremos a última resposta
     const history = [...messages, { role: "user", content: prompt } as Msg].slice(-20);
 
-    setMessages(history); // mantém histórico para o modelo (não renderizamos o 'user')
+    setMessages(history);
     setLoading(true);
 
     try {
@@ -87,6 +118,15 @@ export default function Page() {
     }
   }
 
+  // Apenas a última resposta do assistant para renderização
+  const lastAssistant =
+    [...messages].reverse().find((m) => m.role === "assistant") ?? null;
+
+  // Fallback: se o estado tiver valor fora da lista por qualquer razão
+  const studioValue = (STUDIOS as readonly string[]).includes(studio)
+    ? studio
+    : STUDIOS[0];
+
   return (
     <div className={styles.wrapper}>
       {/* Header */}
@@ -111,51 +151,21 @@ export default function Page() {
           />
         </div>
 
-<div className={styles.field}>
-  <label htmlFor="studio">Innovation Studio da Vaga</label>
-
-  {/* mantenha o estado `studio` como string */}
-  <select
-    id="studio"
-    className={styles.input}
-    value={studio}
-    onChange={(e) => setStudio(e.target.value)}
-  >
-    {[
-      "Agile Transformation",
-      "Modern Applications",
-      "Data & AI",
-      "Cloud & DevSecOps",
-      "Mobile Apps",
-      "Digital Commerce & Experiences",
-      "Delivery Management",
-      "Quality Engineering",
-      "Hyperautomation (RPA)",
-      "User Experience",
-      "Future Hacking",
-      "AI Cockpit",
-      "Financial Solutions",
-      "Information Security",
-      "Global Executive Management",
-      "Business Management",
-      "Internal Infrastructure & Support",
-      "Gaming, XR & Metaverse",
-      "AWS reStack",
-      "People",
-      "Communication & Marketing",
-      "Academy",
-      "Back-Office",
-      "BackOffice Revenue",
-      "Executive Management",
-      "Privacy & Compliance",
-    ].map((opt) => (
-      <option key={opt} value={opt}>
-        {opt}
-      </option>
-    ))}
-  </select>
-</div>
-
+        <div className={styles.field}>
+          <label htmlFor="studio">Innovation Studio da Vaga</label>
+          <select
+            id="studio"
+            className={styles.input}
+            value={studioValue}
+            onChange={(e) => setStudio(e.target.value as typeof STUDIOS[number])}
+          >
+            {STUDIOS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className={styles.field}>
           <label htmlFor="senioridade">Senioridade da vaga</label>
@@ -202,21 +212,21 @@ export default function Page() {
         </div>
       </form>
 
-      {/* Respostas (apenas assistant) */}
+      {/* Apenas a última resposta */}
       <section className={styles.card}>
-        {messages.filter((m) => m.role === "assistant").length === 0 && !loading && (
+        {!lastAssistant && !loading && (
           <div className={styles.placeholder}>Os resultados aparecerão aqui.</div>
         )}
 
-        {messages
-          .filter((m) => m.role === "assistant")
-          .map((m, i) => (
-            <div key={i} className={`${styles.msg} ${styles.assistant}`}>
-              {m.content}
-            </div>
-          ))}
+        {lastAssistant && (
+          <div className={`${styles.msg} ${styles.assistant}`}>
+            {lastAssistant.content}
+          </div>
+        )}
 
-        {loading && <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>}
+        {loading && (
+          <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>
+        )}
         <div ref={endRef} />
       </section>
     </div>
