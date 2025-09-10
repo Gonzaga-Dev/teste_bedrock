@@ -105,26 +105,57 @@ export default function Page() {
           <input
             id="titulo"
             className={styles.input}
-            placeholder="Ex.: Cientista de Dados Pleno"
+            placeholder="Ex.: Cientista de Dados"
             value={titulo}
             onChange={(e) => setTitulo(e.target.value)}
           />
         </div>
 
-        <div className={styles.field}>
-          <label htmlFor="studio">Innovation Studio</label>
-          <select
-            id="studio"
-            className={styles.input}
-            value={studio}
-            onChange={(e) => setStudio(e.target.value)}
-          >
-            <option>Data&IA</option>
-            <option>Modern Apps</option>
-            <option>Gaming / XR</option>
-            <option>Cloud</option>
-          </select>
-        </div>
+<div className={styles.field}>
+  <label htmlFor="studio">Innovation Studio da Vaga</label>
+
+  {/* mantenha o estado `studio` como string */}
+  <select
+    id="studio"
+    className={styles.input}
+    value={studio}
+    onChange={(e) => setStudio(e.target.value)}
+  >
+    {[
+      "Agile Transformation",
+      "Modern Applications",
+      "Data & AI",
+      "Cloud & DevSecOps",
+      "Mobile Apps",
+      "Digital Commerce & Experiences",
+      "Delivery Management",
+      "Quality Engineering",
+      "Hyperautomation (RPA)",
+      "User Experience",
+      "Future Hacking",
+      "AI Cockpit",
+      "Financial Solutions",
+      "Information Security",
+      "Global Executive Management",
+      "Business Management",
+      "Internal Infrastructure & Support",
+      "Gaming, XR & Metaverse",
+      "AWS reStack",
+      "People",
+      "Communication & Marketing",
+      "Academy",
+      "Back-Office",
+      "BackOffice Revenue",
+      "Executive Management",
+      "Privacy & Compliance",
+    ].map((opt) => (
+      <option key={opt} value={opt}>
+        {opt}
+      </option>
+    ))}
+  </select>
+</div>
+
 
         <div className={styles.field}>
           <label htmlFor="senioridade">Senioridade da vaga</label>
