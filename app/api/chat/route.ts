@@ -40,9 +40,11 @@ function sharedOutputAndConstraints(contexto: string) {
     "- Se menos candidatos do que o desejado forem encontrados no mesmo Studio, amplie a busca gradualmente para outros Studios.",
     "",
     "=== FORMATO DE SAÍDA (obrigatório) ===",
-    "Para cada candidato aprovado, imprima EXATAMENTE estas 4 linhas, nesta ordem, e nada mais:",
+    "Para cada candidato aprovado, imprima EXATAMENTE estas 6 linhas, nesta ordem, e nada mais:",
+    "- Nome: <nome do candidato>",
     "- Studio: <Studio do candidato>",
     "- Senioridade: <Senioridade do candidato>",
+    "- Meses na empresa: <número de meses>",
     "- Justificativa: <síntese curta do porquê foi selecionado>",
     "- Email: <email do candidato>",
     "",
@@ -151,8 +153,6 @@ export async function POST(req: Request) {
       maxTokens: 1200,
       temperature: 0.2,
       topP: 0.9,
-      // opcional: pode adicionar stopSequences para reduzir fuga de formato
-      // stopSequences: ["\n\n\n"], // exemplo simples
     });
 
     return NextResponse.json({ reply }, { status: 200 });
