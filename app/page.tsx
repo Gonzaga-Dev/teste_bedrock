@@ -7,6 +7,7 @@ import styles from "./page.module.css";
 type Msg = { role: "user" | "assistant"; content: string };
 type ModeKey = "match_vagas" | "substituicao_profissional";
 
+/* Modos com legends/labels atualizados */
 const MODES: Record<
   ModeKey,
   { label: string; legend: string; submitLabel: string; placeholder: string }
@@ -14,7 +15,7 @@ const MODES: Record<
   match_vagas: {
     label: "Match Vagas",
     legend:
-      "Descreva a vaga. Quanto mais detalhes, mais preciso o match. Informe requisitos, responsabilidades e contexto.",
+      "Quanto mais detalhes forem fornecidos, mais preciso será o match. Que tipo de profissional você busca hoje?",
     submitLabel: "Buscar candidatos",
     placeholder:
       "Requisitos desejáveis, nº de profissionais, atividades, escopo, necessidades do cliente…",
@@ -22,10 +23,10 @@ const MODES: Record<
   substituicao_profissional: {
     label: "Substituição de Profissional",
     legend:
-      "Descreva a necessidade de substituição (contexto, riscos, prazos). Informe perfil desejado para a reposição.",
+      "Informe perfil desejado para a reposição. Quanto mais detalhes, mais adequados serão os profissionais.",
     submitLabel: "Sugerir substitutos",
     placeholder:
-      "Motivo da substituição, riscos do projeto, prazos, skills essenciais e diferenciais…",
+      "Motivo da substituição, skills essenciais, diferenciais, contexto do projeto…",
   },
 };
 
@@ -67,23 +68,42 @@ export default function Page() {
   const router = useRouter();
   const sp = useSearchParams();
 
+  // Splash screen (3s) com animação "carregando..."
+  const [showSplash, setShowSplash] = useState(true);
+  const [dots, setDots] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setShowSplash(false), 3000);
+    const i = setInterval(() => {
+      setDots((d) => (d.length >= 3 ? "" : d + "."));
+    }, 400);
+    return () => {
+      clearTimeout(t);
+      clearInterval(i);
+    };
+  }, []);
+
+  // --- Modo ---
   const urlMode = (sp.get("mode") as ModeKey) || undefined;
   const [mode, setMode] = useState<ModeKey>(urlMode || "match_vagas");
 
+  // --- Estado UI ---
   const [legend, setLegend] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
+  // --- Form base (comum) ---
   const [titulo, setTitulo] = useState("");
   const [studio, setStudio] = useState<typeof STUDIOS[number]>("Data & AI");
   const [senioridade, setSenioridade] = useState("Trainee");
   const [techs, setTechs] = useState("");
   const [descricao, setDescricao] = useState("");
 
-  const [alvoSubstituicao, setAlvoSubstituicao] = useState("");
-  const [contextoSubstituicao, setContextoSubstituicao] = useState("");
+  // --- Campo para substituição (ajustado) ---
+  const [alvoSubstituicao, setAlvoSubstituicao] = useState(""); // Nome do Profissional
 
+  // Persistir modo na URL e no localStorage
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     q.set("mode", mode);
@@ -91,6 +111,7 @@ export default function Page() {
     localStorage.setItem("mode", mode);
   }, [mode, router]);
 
+  // Restaurar modo salvo se não veio pela URL
   useEffect(() => {
     if (!urlMode) {
       const saved = localStorage.getItem("mode") as ModeKey | null;
@@ -98,6 +119,7 @@ export default function Page() {
     }
   }, [urlMode]);
 
+  // Efeito de "digitação" na legenda ao trocar de modo
   useEffect(() => {
     const target = MODES[mode].legend;
     setLegend("");
@@ -110,12 +132,14 @@ export default function Page() {
     return () => clearInterval(id);
   }, [mode]);
 
+  // Auto scroll
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
   const studioValue = (STUDIOS as readonly string[]).includes(studio) ? studio : STUDIOS[0];
 
+  // --- Prompt builders ---
   function buildPromptMatchVagas() {
     const brief =
       `Título: ${titulo.trim() || "-"}\n` +
@@ -144,16 +168,13 @@ export default function Page() {
       `Tecnologias-chave: ${techs.trim() || "-"}\n` +
       `Perfil desejado (descrição): ${descricao.trim() || "-"}`;
 
-    const subInfo =
-      `Profissional atual (nome/ID): ${alvoSubstituicao.trim() || "-"}\n` +
-      `Contexto/Riscos/Prazos: ${contextoSubstituicao.trim() || "-"}`;
+    const subInfo = `Nome do Profissional (atual): ${alvoSubstituicao.trim() || "-"}`;
 
     return [
-      "Objetivo: sugerir substitutos adequados para o profissional indicado, mitigando riscos e mantendo a continuidade do projeto.",
+      "Objetivo: sugerir substitutos adequados para o profissional indicado.",
       "Regras:",
-      "- Considere fit técnico, senioridade, domínio de domínio/cliente e riscos informados.",
-      "- Liste substitutos potenciais com justificativas curtas e recomendações de transição (handover).",
-      "- Se necessário, proponha plano de mitigação de curto prazo.",
+      "- Considere fit técnico, senioridade, e dê preferência a profissionais do mesmo Studio",
+      "- Liste substitutos potenciais com justificativas curtas",
       "",
       "DADOS DA SUBSTITUIÇÃO:",
       subInfo,
@@ -167,6 +188,7 @@ export default function Page() {
     return mode === "substituicao_profissional" ? buildPromptSubstituicao() : buildPromptMatchVagas();
   }
 
+  // --- Submit ---
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (loading) return;
@@ -205,6 +227,19 @@ export default function Page() {
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant") ?? null;
 
+  /* Splash screen simples, centralizado */
+  if (showSplash) {
+    return (
+      <div className={styles.wrapper} style={{ display: "grid", placeItems: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <h1 className={styles.title}>Talent Match Making</h1>
+          <p className={styles.legend}>carregando{dots}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // App normal
   return (
     <div className={styles.wrapper}>
       <header className={styles.header}>
@@ -303,25 +338,13 @@ export default function Page() {
         {mode === "substituicao_profissional" && (
           <>
             <div className={styles.field}>
-              <label htmlFor="alvo">Profissional atual (nome/ID)</label>
+              <label htmlFor="alvo">Nome do Profissional</label>
               <input
                 id="alvo"
                 className={styles.input}
-                placeholder="Ex.: João Silva (ID 12345)"
+                placeholder="Ex.: João Silva"
                 value={alvoSubstituicao}
                 onChange={(e) => setAlvoSubstituicao(e.target.value)}
-                required={mode === "substituicao_profissional"}
-              />
-            </div>
-
-            <div className={styles.fieldFull}>
-              <label htmlFor="contexto">Contexto / Riscos / Prazos</label>
-              <textarea
-                id="contexto"
-                className={`${styles.input} ${styles.textarea}`}
-                placeholder="Ex.: Prazo crítico em 30 dias, risco de atraso em entregas, necessidade de handover…"
-                value={contextoSubstituicao}
-                onChange={(e) => setContextoSubstituicao(e.target.value)}
                 required={mode === "substituicao_profissional"}
               />
             </div>
@@ -339,11 +362,9 @@ export default function Page() {
         {!lastAssistant && !loading && (
           <div className={styles.placeholder}>Os resultados aparecerão aqui.</div>
         )}
-
         {lastAssistant && (
           <div className={`${styles.msg} ${styles.assistant}`}>{lastAssistant.content}</div>
         )}
-
         {loading && <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>}
         <div ref={endRef} />
       </section>
