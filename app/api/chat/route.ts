@@ -22,17 +22,42 @@ function toMsgArray(x: unknown): Msg[] {
     }))
     .filter((m) => m.content.trim() !== "");
 }
+
 function truncate(s: string, max = 2000) {
   return s.length <= max ? s : s.slice(0, max) + " …";
 }
 
 // --- system builders por modo ---
-function buildSystemForMatchVagas(contexto: string): string {
+function sharedOutputAndConstraints(contexto: string) {
   return [
-    "Você é um assistente de seleção técnica.",
     "USE EXCLUSIVAMENTE as informações do CONTEXTO para responder.",
     "É PROIBIDO inventar, completar a partir de conhecimento geral ou usar fontes externas.",
     "Se algo solicitado não constar no CONTEXTO, responda exatamente: 'Sem evidências suficientes no contexto.'",
+    "",
+    "=== PRIORIDADES ===",
+    "- Priorize candidatos com nível 3 ou 4 nas tecnologias informadas na solicitação.",
+    "- Priorize candidatos do mesmo Innovation Studio informado.",
+    "- Se menos candidatos do que o desejado forem encontrados no mesmo Studio, amplie a busca gradualmente para outros Studios.",
+    "",
+    "=== FORMATO DE SAÍDA (obrigatório) ===",
+    "Para cada candidato aprovado, imprima EXATAMENTE estas 4 linhas, nesta ordem, e nada mais:",
+    "- Studio: <Studio do candidato>",
+    "- Senioridade: <Senioridade do candidato>",
+    "- Justificativa: <síntese curta do porquê foi selecionado>",
+    "- Email: <email do candidato>",
+    "",
+    "Entre um candidato e outro, deixe UMA linha em branco.",
+    "Não inclua títulos, numeração, score, pontos fortes, recomendações de transição ou qualquer outro campo.",
+    "",
+    "=== CONTEXTO ===",
+    contexto,
+  ].join("\n");
+}
+
+function buildSystemForMatchVagas(contexto: string): string {
+  return [
+    "Você é um assistente de seleção técnica.",
+    sharedOutputAndConstraints(contexto),
     "",
     "=== REGRAS DE NEGÓCIO (MATCH VAGAS) ===",
     "1) Filtro por Innovation Studio:",
@@ -47,57 +72,32 @@ function buildSystemForMatchVagas(contexto: string): string {
     "3) Filtro de Habilidades:",
     "- Considerar apenas candidatos que preenchem todos os requisitos obrigatórios.",
     "- Eliminar candidatos com nível inferior a 2 na tecnologia principal exigida.",
-    "- Conhecimentos devem ser apresentados no formato {categoria = [habilidade (nível)]}.",
+    "- Priorize nível 3 e 4 nas tecnologias informadas.",
+    "- Conhecimentos, quando mencionados, devem seguir o formato {categoria = [habilidade (nível)]}.",
     "",
     "4) Quantidade de Selecionados:",
-    "- Caso o número de candidatos aprovados seja inferior a 10, suspender a restrição de innovation_studio.",
-    "- Se ainda assim houver menos de 10, liberar o filtro de nível mínimo na tecnologia principal (admitir candidatos com nível < 2) e senioridade, aplicando penalização no score.",
-    "",
-    "5) Cálculo do Score Final (0 a 100%):",
-    "- Tecnologia principal: até 30% (ou 10% se nível < 2).",
-    "- Requisitos obrigatórios: até 50%.",
-    "- Requisitos desejáveis: até 20%.",
-    "",
-    "6) Resultado:",
-    "- Retornar 10 candidatos classificados por score em ordem decrescente.",
-    "- Traga justificativas curtas do motivo da escolha.",
-    "",
-    "=== CONTEXTO ===",
-    contexto,
+    "- Retorne até 10 candidatos. Se não houver 10 no mesmo Studio, amplie para outros Studios.",
   ].join("\n");
 }
 
 function buildSystemForSubstituicao(contexto: string): string {
   return [
     "Você é um assistente de seleção técnica focado em continuidade de projetos.",
-    "USE EXCLUSIVAMENTE as informações do CONTEXTO para responder.",
-    "É PROIBIDO inventar, completar a partir de conhecimento geral ou usar fontes externas.",
-    "Se algo solicitado não constar no CONTEXTO, responda exatamente: 'Sem evidências suficientes no contexto.'",
+    sharedOutputAndConstraints(contexto),
     "",
     "=== REGRAS DE NEGÓCIO (SUBSTITUIÇÃO DE PROFISSIONAL) ===",
     "Objetivo: sugerir substitutos adequados para o profissional indicado, mitigando riscos e mantendo a continuidade do projeto.",
     "",
     "1) Filtros Base:",
-    "- Innovation Studio: priorizar candidatos com innovation_studio igual; se menos de 10 aprovados, liberar.",
+    "- Innovation Studio: priorizar candidatos com innovation_studio igual; se menos de 10 aprovados, liberar para outros Studios.",
     "- Senioridade: aplicar as mesmas regras de senioridade do modo Match Vagas.",
-    "- Habilidades: aplicar os mesmos critérios (obrigatórios e nível na tecnologia principal).",
+    "- Habilidades: aplicar os mesmos critérios (obrigatórios e nível na tecnologia principal), priorizando nível 3 e 4.",
     "",
-    "2) Continuidade e Risco:",
+    "2) Continuidade e Risco (quando o CONTEXTO trouxer evidências):",
     "- Valorizar candidatos com histórico/fit no domínio do cliente, stack semelhante e menor curva de rampa.",
-    "- Recomendar ações de handover quando aplicável (p.ex.: shadowing, documentação, pareamento).",
     "",
-    "3) Cálculo do Score Final (0 a 100%):",
-    "- Tecnologia principal: até 25% (ou 10% se nível < 2).",
-    "- Requisitos obrigatórios: até 40%.",
-    "- Requisitos desejáveis: até 15%.",
-    "- Continuidade/fit de contexto (domínio/cliente/stack): até 20%.",
-    "",
-    "4) Resultado:",
-    "- Retornar até 10 substitutos em ordem decrescente de score.",
-    "- Para cada um: justificativa curta e recomendação de transição (quando fizer sentido).",
-    "",
-    "=== CONTEXTO ===",
-    contexto,
+    "3) Quantidade de Selecionados:",
+    "- Retorne até 10 substitutos. Se não houver 10 no mesmo Studio, amplie para outros Studios.",
   ].join("\n");
 }
 
@@ -137,7 +137,7 @@ export async function POST(req: Request) {
       )
       .join("\n\n");
 
-    // 2) System por modo (regras + exigência de usar apenas o contexto)
+    // 2) System por modo (regras + exigência de usar apenas o contexto + formato fixo)
     const system =
       mode === "substituicao_profissional"
         ? buildSystemForSubstituicao(contexto)
@@ -151,6 +151,8 @@ export async function POST(req: Request) {
       maxTokens: 1200,
       temperature: 0.2,
       topP: 0.9,
+      // opcional: pode adicionar stopSequences para reduzir fuga de formato
+      // stopSequences: ["\n\n\n"], // exemplo simples
     });
 
     return NextResponse.json({ reply }, { status: 200 });
