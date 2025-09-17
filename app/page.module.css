@@ -1,3 +1,6 @@
+/* ===========================
+   Layout geral
+   =========================== */
 .wrapper {
   max-width: 1080px;
   margin: 0 auto;
@@ -6,8 +9,14 @@
   min-height: 100vh;
 }
 
-/* Header */
-.header { text-align: center; margin-bottom: 20px; }
+/* ===========================
+   Header
+   =========================== */
+.header {
+  text-align: center;
+  margin-bottom: 24px; /* um pouco mais de respiro para as abas */
+}
+
 .title {
   font-size: 34px;
   line-height: 1.15;
@@ -15,12 +24,52 @@
   font-weight: 800;
   color: var(--text);
 }
+
+/* --------- MODO: Abas --------- */
+.modes {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  margin: 16px auto 10px;
+  padding-bottom: 2px;                 /* alinha com a linha inferior */
+  border-bottom: 1px solid var(--border);
+}
+
+.modeCard {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-muted);
+  border-bottom: 3px solid transparent; /* indicador da aba */
+  transition: color .15s ease, border-color .15s ease;
+}
+
+.modeCard:hover {
+  color: var(--text);
+}
+
+.modeCard:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(245,158,11,.28); /* mesmo foco do tema */
+}
+
+.active {
+  color: var(--text);
+  border-color: var(--brand); /* linha de destaque da aba ativa */
+}
+
 .legend {
   margin: 8px auto 0;
   color: var(--text-muted);
   min-height: 22px;
   max-width: 760px;
 }
+
 .caret {
   display: inline-block;
   width: 10px;
@@ -30,9 +79,12 @@
   animation: blink 1s steps(1, end) infinite;
   vertical-align: text-bottom;
 }
+
 @keyframes blink { 50% { opacity: 0; } }
 
-/* Form */
+/* ===========================
+   Form
+   =========================== */
 .form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -45,8 +97,18 @@
   margin-bottom: 18px;
 }
 
-.field { display: flex; flex-direction: column; gap: 8px; }
-.fieldFull { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fieldFull {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 /* Escopado ao módulo */
 .form label {
@@ -65,7 +127,11 @@
   outline: none;
   min-height: 40px;
 }
-.input::placeholder { color: var(--text-muted); }
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
 .input:focus,
 .input:focus-visible {
   border-color: var(--focus);
@@ -73,14 +139,20 @@
   outline: none; /* evita anel global duplicado */
 }
 
-.textarea { min-height: 120px; resize: vertical; }
+.textarea {
+  min-height: 120px;
+  resize: vertical;
+}
 
-/* Ações */
+/* ===========================
+   Ações
+   =========================== */
 .actions {
   grid-column: 1 / -1;
   display: flex;
   justify-content: flex-end;
 }
+
 .button {
   background: var(--brand);
   color: var(--black);
@@ -92,16 +164,26 @@
   min-height: 40px;
   transition: transform .05s ease, filter .15s ease, background .15s ease;
 }
-.button:disabled { opacity: .6; cursor: not-allowed; }
+
+.button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
 .button:hover:not(:disabled),
 .button:focus-visible:not(:disabled) {
   background: var(--orange);
   color: var(--black);
   outline: none; /* evita anel global duplicado */
 }
-.button:active { transform: translateY(1px); }
 
-/* Resultados */
+.button:active {
+  transform: translateY(1px);
+}
+
+/* ===========================
+   Resultados
+   =========================== */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -111,7 +193,10 @@
   box-shadow: 0 1px 2px rgba(0,0,0,.3);
 }
 
-.placeholder { color: var(--text-muted); font-size: 14px; }
+.placeholder {
+  color: var(--text-muted);
+  font-size: 14px;
+}
 
 /* Mensagens do modelo */
 .msg {
@@ -121,6 +206,7 @@
   font-size: 14px;
   line-height: 1.55;
 }
+
 .assistant {
   /* “tint” leve do brand sobre a surface sem usar color-mix (compatibilidade) */
   background: linear-gradient(
@@ -131,7 +217,36 @@
   white-space: pre-line; /* preserva \n vindos do modelo */
 }
 
-/* Responsivo */
+/* ===========================
+   Responsivo
+   =========================== */
 @media (max-width: 860px) {
   .form { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 520px) {
+  /* Abas empilhadas quando a tela for pequena */
+  .modes {
+    flex-direction: column;
+    align-items: stretch;
+    border-bottom: none;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .modeCard {
+    width: 100%;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0; /* evita cantos arredondados entre itens */
+  }
+
+  .modeCard:last-child {
+    border-bottom: none;
+  }
+
+  .active {
+    background: color-mix(in srgb, var(--brand) 12%, var(--surface) 88%);
+    border-color: transparent;
+  }
 }
