@@ -88,7 +88,7 @@ export async function POST(req: Request) {
       "",
       "6. Resultado:",
       "- Retornar 10 candidatos classificados por score em ordem decrescente.",
-      "- Traga justificativas curtas citando o(s) trecho(s) do CONTEXTO (ex.: Trecho 2).",
+      "- Traga justificativas curtas o motivo da escolha.",
       "",
       "=== CONTEXTO ===",
       contexto,
