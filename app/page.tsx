@@ -35,6 +35,7 @@ const STUDIOS = [
   "BackOffice Revenue",
   "Executive Management",
   "Privacy & Compliance",
+  "Buscar em Todos",
 ] as const;
 
 export default function Page() {
@@ -195,11 +196,11 @@ export default function Page() {
         </div>
 
         <div className={styles.fieldFull}>
-          <label htmlFor="desc">Descrição das atividades</label>
+          <label htmlFor="desc">Descreva o que Busca</label>
           <textarea
             id="desc"
             className={`${styles.input} ${styles.textarea}`}
-            placeholder="Contexto do projeto, requisitos desejáveis, diferenciais…"
+            placeholder="Requisitos desejáveis, nº de profissionais, Descrição das atividades"
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
           />
