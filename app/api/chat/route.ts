@@ -98,10 +98,7 @@ function buildSystemForSubstituicao(contexto: string): string {
     "2) Continuidade e Risco (quando o CONTEXTO trouxer evidências):",
     "- Valorizar candidatos com histórico/fit no domínio do cliente, stack semelhante e menor curva de rampa.",
     "",
-    "3) Justificativa (exigência adicional):",
-    "- Na linha 'Justificativa', explicite a similaridade com o profissional informado (nome presente no enunciado), citando pelo menos um dos critérios: senioridade, Studio, principais tecnologias/níveis e/ou domínio do cliente, conforme o CONTEXTO.",
-    "",
-    "4) Quantidade de Selecionados:",
+    "3) Quantidade de Selecionados:",
     "- Retorne até 10 substitutos. Se não houver 10 no mesmo Studio, amplie para outros Studios.",
   ].join("\n");
 }
@@ -138,20 +135,20 @@ export async function POST(req: Request) {
 
     const contexto = chunks
       .map(
-        (c, i) =>
-          `### Trecho ${i + 1}\n${truncate(c.text, 1800)}${
+        (c) =>
+          `${truncate(c.text, 1800)}${
             c.source ? `\n[Fonte]: ${c.source}` : ""
           }`
       )
       .join("\n\n");
 
-    // 2) System por modo
+    // 2) System por modo (regras + exigência de usar apenas o contexto + formato fixo)
     const system =
       mode === "substituicao_profissional"
         ? buildSystemForSubstituicao(contexto)
         : buildSystemForMatchVagas(contexto);
 
-    // 3) Invoca o modelo
+    // 3) Invoca o modelo com o system + mensagem do usuário
     const reply = await invokeHaiku({
       message, // enunciado/brief do formulário (já inclui os campos do front)
       history, // mantém histórico curto
