@@ -16,13 +16,13 @@ type Candidate = {
   email?: string;
 };
 
-/* Textos compartilhados entre os modos (pedido 4) */
+/* Textos compartilhados entre os modos */
 const COMMON_LEGEND =
   "Quanto mais detalhes forem fornecidos, mais preciso será o match. Que tipo de profissional você busca hoje?";
 const COMMON_PLACEHOLDER =
   "Requisitos desejáveis, nº de profissionais, atividades, escopo, necessidades do cliente…";
 
-/* Modos com legends/labels atualizados */
+/* Modos */
 const MODES: Record<
   ModeKey,
   { label: string; legend: string; submitLabel: string; placeholder: string }
@@ -35,9 +35,9 @@ const MODES: Record<
   },
   substituicao_profissional: {
     label: "Substituição de Profissional",
-    legend: COMMON_LEGEND, // igual ao match
+    legend: COMMON_LEGEND,
     submitLabel: "Sugerir substitutos",
-    placeholder: COMMON_PLACEHOLDER, // igual ao match
+    placeholder: COMMON_PLACEHOLDER,
   },
 };
 
@@ -77,24 +77,36 @@ const SENIORIDADES = ["Trainee", "Júnior", "Pleno", "Sênior", "Especialista"] 
 
 const LEGEND_SPEED_MS = 25;
 
-/* ---------- Helpers ---------- */
+/* ---------- Helpers (parser reforçado) ---------- */
 function splitBlocks(text: string): string[] {
   return text
     .replace(/\r/g, "")
-    .split(/\n{2,}/g)
+    .split(/\n{2,}/g) // em branco duplica separa candidatos
     .map((b) => b.trim())
     .filter(Boolean);
 }
 
 function norm(line: string) {
-  return line.replace(/^[\s\-•*]+/, "").trim();
+  return line.replace(/^[\s\-•*]+/, "").trim(); // tira bullets, hífens, etc.
 }
 
 function parseLineKV(line: string): [string, string] | null {
   const L = norm(line);
+
+  // 1) chave: valor
   const m = L.match(/^([^:]+):\s*(.+)$/i);
-  if (!m) return null;
-  return [m[1].toLowerCase().trim(), m[2].trim()];
+  if (m) return [m[1].toLowerCase().trim(), m[2].trim()];
+
+  // 2) fallback: detectar email "solto" (sem chave)
+  const email = L.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  if (email) return ["email", email[0]];
+
+  return null;
+}
+
+function stripCandidateHeader(s: string): string {
+  // remove "Candidato Trecho 7" ou similares
+  return s.replace(/^candidato\s+trecho\s+\d+\s*$/i, "").trim();
 }
 
 function parseCandidates(text: string): Candidate[] {
@@ -104,25 +116,36 @@ function parseCandidates(text: string): Candidate[] {
   const out: Candidate[] = [];
   for (const b of blocks) {
     const cand: Candidate = {};
-    const lines = b
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
+    const lines = b.split("\n").map((l) => l.trim()).filter(Boolean);
 
     for (const raw of lines) {
       const kv = parseLineKV(raw);
       if (!kv) continue;
-      const [k, v] = kv;
 
-      if (k.startsWith("nome")) cand.nome = v;
-      else if (k.startsWith("studio")) cand.studio = v;
-      else if (k.startsWith("senior")) cand.senioridade = v;
-      else if (k.startsWith("meses")) cand.meses = v.replace(/[^\d.,]/g, "").replace(/,$/, "");
-      else if (k.startsWith("just")) cand.justificativa = v;
-      else if (k.startsWith("email")) cand.email = v;
+      let [k, v] = kv;
+      v = v.trim();
+
+      if (/^nome/.test(k)) {
+        cand.nome = stripCandidateHeader(v);
+      } else if (/^studio/.test(k)) {
+        cand.studio = v;
+      } else if (/^senior/.test(k)) {
+        cand.senioridade = v;
+      } else if (/^meses?/.test(k)) {
+        cand.meses = v.replace(/[^\d.,]/g, "").replace(/,$/, "");
+      } else if (/^just/.test(k)) {
+        cand.justificativa = v;
+      } else if (/^(e-?mail|email(?:\s*corporativo|\s*principal)?)$/.test(k)) {
+        cand.email = v;
+      } else if (k === "email") {
+        cand.email = v; // capturado via regex "solto"
+      }
     }
 
-    if (cand.nome && (cand.studio || cand.justificativa)) out.push(cand);
+    // Validade: precisa ter Nome e pelo menos uma info adicional útil
+    if (cand.nome && (cand.studio || cand.senioridade || cand.justificativa)) {
+      out.push(cand);
+    }
   }
 
   return out;
@@ -156,19 +179,19 @@ export default function Page() {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   // --- Form base (comum) ---
-  const [titulo, setTitulo] = useState(""); // (3) rótulo muda abaixo
+  const [titulo, setTitulo] = useState(""); // "Título da Vaga"
   const [studio, setStudio] = useState<typeof STUDIOS[number]>("Data & AI");
   const [techs, setTechs] = useState("");
   const [descricao, setDescricao] = useState("");
 
-  // Senioridades — (2) padrão agora é Trainee
+  // Senioridades — default Trainee (como solicitado)
   const DEFAULT_SENIORIDADES = ["Trainee"];
   const [senioridadesSel, setSenioridadesSel] = useState<string[]>(DEFAULT_SENIORIDADES);
 
   // Substituição
   const [alvoSubstituicao, setAlvoSubstituicao] = useState("");
 
-  // Persistir modo na URL e no localStorage
+  // Persistência de modo
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     q.set("mode", mode);
@@ -184,7 +207,7 @@ export default function Page() {
     }
   }, [urlMode]);
 
-  // Função de reset geral (1)
+  // Reset geral ao alternar aba (mantido conforme seu pedido)
   const resetAll = () => {
     setTitulo("");
     setStudio("Data & AI");
@@ -195,7 +218,7 @@ export default function Page() {
     setMessages([]); // limpa resultados também
   };
 
-  // Ao trocar de modo, zera campos e anima legenda
+  // Ao trocar modo: reset + anima legenda
   useEffect(() => {
     resetAll();
 
@@ -218,7 +241,7 @@ export default function Page() {
 
   const studioValue = (STUDIOS as readonly string[]).includes(studio) ? studio : STUDIOS[0];
 
-  // --- Prompt builders ---
+  // --- Prompt builders (sem alterações funcionais aqui) ---
   function buildPromptMatchVagas() {
     const brief =
       `Título da Vaga: ${titulo.trim() || "-"}\n` +
@@ -317,7 +340,7 @@ export default function Page() {
       <div className={styles.wrapper} style={{ display: "grid", placeItems: "center" }}>
         <div style={{ textAlign: "center" }}>
           <h1 className={styles.title}>Talent Match Making</h1>
-          <p className={styles.legend}>carregando{dots}</p>
+        <p className={styles.legend}>carregando{dots}</p>
         </div>
       </div>
     );
@@ -350,7 +373,7 @@ export default function Page() {
 
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.field}>
-          <label htmlFor="titulo">Título da Vaga</label> {/* (3) */}
+          <label htmlFor="titulo">Título da Vaga</label>
           <input
             id="titulo"
             className={styles.input}
@@ -419,7 +442,6 @@ export default function Page() {
         </div>
 
         <div className={styles.fieldFull}>
-          {/* (4) Mesmo rótulo nos dois modos */}
           <label htmlFor="desc">Descreva a Vaga</label>
           <textarea
             id="desc"
@@ -488,31 +510,23 @@ export default function Page() {
                   {c.nome || "—"}
                 </h3>
                 <div style={{ fontSize: 13, color: "var(--text)" }}>
-                  <div>
-                    <strong>Studio:</strong> {c.studio || "—"}
-                  </div>
-                  <div>
-                    <strong>Senioridade:</strong> {c.senioridade || "—"}
-                  </div>
-                  <div>
-                    <strong>Meses na empresa:</strong> {c.meses || "—"}
-                  </div>
+                  <div><strong>Studio:</strong> {c.studio || "—"}</div>
+                  <div><strong>Senioridade:</strong> {c.senioridade || "—"}</div>
+                  <div><strong>Meses na empresa:</strong> {c.meses || "—"}</div>
                 </div>
-                {c.justificativa && (
-                  <p style={{ marginTop: 8, fontSize: 13, color: "var(--text)" }}>
-                    <strong>Justificativa:</strong> {c.justificativa}
-                  </p>
-                )}
-                {c.email && (
-                  <p style={{ marginTop: 6, fontSize: 13 }}>
-                    <a
-                      href={`mailto:${c.email}`}
-                      style={{ color: "var(--brand)", textDecoration: "none" }}
-                    >
+                <p style={{ marginTop: 8, fontSize: 13, color: "var(--text)" }}>
+                  <strong>Justificativa:</strong> {c.justificativa || "—"}
+                </p>
+                <p style={{ marginTop: 6, fontSize: 13 }}>
+                  <strong>Email: </strong>
+                  {c.email ? (
+                    <a href={`mailto:${c.email}`} style={{ color: "var(--brand)", textDecoration: "none" }}>
                       {c.email}
                     </a>
-                  </p>
-                )}
+                  ) : (
+                    "—"
+                  )}
+                </p>
               </article>
             ))}
           </div>
