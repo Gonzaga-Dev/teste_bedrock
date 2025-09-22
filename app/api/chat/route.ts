@@ -23,7 +23,7 @@ function toMsgArray(x: unknown): Msg[] {
     .filter((m) => m.content.trim() !== "");
 }
 
-// aumentar truncate para preservar Nome/Email nos chunks
+// Preserva Nome/Email nos chunks longos
 function truncate(s: string, max = 3800) {
   return s.length <= max ? s : s.slice(0, max) + " …";
 }
@@ -32,12 +32,12 @@ function truncate(s: string, max = 3800) {
 function sharedOutputAndConstraints(contexto: string) {
   return [
     "USE EXCLUSIVAMENTE as informações do CONTEXTO para responder.",
-    "É PROIBIDO inventar, completar com conhecimento geral ou usar fontes externas.",
+    "É PROIBIDO inventar ou usar conhecimento fora do CONTEXTO.",
     "",
     "=== PRIORIDADES ===",
     "- Priorize candidatos com nível 3 ou 4 nas tecnologias informadas na solicitação.",
     "- Priorize candidatos do mesmo Innovation Studio informado.",
-    "- Se menos candidatos do que o desejado forem encontrados no mesmo Studio, AMPLIE OBRIGATORIAMENTE para outros Studios ATÉ completar 10 perfis elegíveis (ou esgotar o CONTEXTO).",
+    "- Se menos candidatos do que o desejado forem encontrados no mesmo Studio, amplie a busca gradualmente para outros Studios até atingir até 10 perfis (se houver evidências suficientes).",
     "",
     "=== FORMATO DE SAÍDA (obrigatório) ===",
     "Para cada candidato aprovado, imprima EXATAMENTE estas 6 linhas, nesta ordem, e nada mais:",
@@ -48,11 +48,10 @@ function sharedOutputAndConstraints(contexto: string) {
     "- Justificativa: <síntese curta>",
     "- Email: <email do candidato>",
     "",
-    "Regras rígidas de saída:",
-    "- NÃO escreva cabeçalhos como 'Candidato', 'Trecho', 'Item', numeração, bullets ou títulos extras.",
-    "- Se o campo 'Nome' não existir no CONTEXTO para um perfil, NÃO liste esse candidato.",
-    "- Se 'Email' existir no CONTEXTO com chaves equivalentes (ex.: 'E-mail', 'email corporativo', 'email_principal'), normalize e imprima em 'Email:'. Se ausente, deixe a linha com valor vazio.",
-    "- Nunca copie rótulos do CONTEXTO (ex.: 'Trecho 7', '[Fonte]'); imprima apenas as 6 linhas acima por candidato.",
+    "Padronizações:",
+    "- Se NÃO houver um campo de nome explícito no CONTEXTO, utilize um IDENTIFICADOR PRESENTE (ex.: id, matrícula, alias, ou o próprio e-mail) como valor de 'Nome:' — nunca invente nomes.",
+    "- Para 'Email', aceite chaves equivalentes (ex.: 'E-mail', 'email corporativo', 'email_principal'). Se não houver, mantenha a linha com valor vazio.",
+    "- Não escreva cabeçalhos ('Candidato', 'Trecho', 'Item'), bullets, numeração ou títulos extras.",
     "",
     "=== CONTEXTO ===",
     contexto,
@@ -65,24 +64,24 @@ function buildSystemForMatchVagas(contexto: string): string {
     sharedOutputAndConstraints(contexto),
     "",
     "=== REGRAS DE NEGÓCIO (MATCH VAGAS) ===",
-    "1) Filtro por Innovation Studio: selecionar inicialmente candidatos cujo campo innovation_studio seja igual ao da vaga.",
+    "1) Innovation Studio: iniciar pelo Studio da vaga.",
     "",
-    "2) Filtro de Senioridade:",
-    "- Vaga ESPECIALISTA: aceitar apenas ESPECIALISTA e SÊNIOR com pelo menos 12 meses.",
-    "- Vaga SÊNIOR: aceitar apenas SÊNIOR e PLENO com pelo menos 12 meses.",
-    "- Vaga PLENO: aceitar apenas PLENO e JÚNIOR com pelo menos 20 meses.",
-    "- Vaga JÚNIOR ou TRAINEE: aceitar níveis iguais ou inferiores.",
+    "2) Senioridade:",
+    "- ESPECIALISTA: aceitar ESPECIALISTA e SÊNIOR com >= 12 meses.",
+    "- SÊNIOR: aceitar SÊNIOR e PLENO com >= 12 meses.",
+    "- PLENO: aceitar PLENO e JÚNIOR com >= 20 meses.",
+    "- JÚNIOR/TRAINEE: aceitar níveis iguais ou inferiores.",
     "",
-    "3) Filtro de Habilidades:",
-    "- Considerar apenas candidatos que cumpram requisitos obrigatórios quando existirem no CONTEXTO.",
-    "- Eliminar candidatos com nível inferior a 2 na tecnologia principal exigida.",
+    "3) Habilidades:",
+    "- Considerar requisitos obrigatórios quando existirem no CONTEXTO.",
+    "- Eliminar candidatos com nível < 2 na tecnologia principal.",
     "- Priorize níveis 3 e 4 nas tecnologias informadas.",
     "",
     "4) Quantidade:",
-    "- Retorne ATÉ 10 candidatos. Se não houver 10 no Studio da vaga, AMPLIE para outros Studios ATÉ completar 10 (se existirem evidências suficientes).",
+    "- Retorne até 10 candidatos. Caso não atinja 10 no Studio-alvo, é recomendável ampliar para outros Studios (sem inventar dados).",
     "",
     "5) Justificativa:",
-    "- Na linha 'Justificativa', faça uma síntese objetiva dos critérios de seleção (Studio, senioridade, habilidades/níveis e meses na empresa) encontrados no CONTEXTO.",
+    "- Sintetize Studio, senioridade, habilidades/níveis e meses na empresa, conforme evidências do CONTEXTO.",
   ].join("\n");
 }
 
@@ -94,19 +93,19 @@ function buildSystemForSubstituicao(contexto: string): string {
     "=== REGRAS DE NEGÓCIO (SUBSTITUIÇÃO DE PROFISSIONAL) ===",
     "Objetivo: sugerir substitutos adequados para o profissional indicado, mitigando riscos e mantendo a continuidade do projeto.",
     "",
-    "1) Filtros Base:",
-    "- Innovation Studio: priorizar candidatos com innovation_studio igual; se menos de 10 aprovados, AMPLIE para outros Studios ATÉ completar 10.",
+    "1) Filtros base:",
+    "- Innovation Studio: priorizar o mesmo; se necessário, ampliar para outros Studios até retornar até 10.",
     "- Senioridade: aplicar as mesmas regras do modo Match Vagas.",
-    "- Habilidades: aplicar os mesmos critérios (obrigatórios e nível na tecnologia principal), priorizando nível 3 e 4.",
+    "- Habilidades: aplicar os mesmos critérios (obrigatórios e nível na tecnologia principal), priorizando níveis 3 e 4.",
     "",
-    "2) Continuidade e Risco (quando houver evidências no CONTEXTO):",
-    "- Valorizar candidatos com histórico/fit no domínio do cliente, stack semelhante e menor curva de rampa.",
+    "2) Continuidade e risco (quando houver evidências):",
+    "- Valorizar histórico/fit no domínio do cliente, stack semelhante e menor curva de rampa.",
     "",
     "3) Quantidade:",
-    "- Retorne ATÉ 10 substitutos; expanda Studios para atingir 10, se houver evidências suficientes.",
+    "- Retorne até 10 substitutos; amplie Studios caso precise (sempre dentro das evidências).",
     "",
-    "4) Justificativa:",
-    "- Na linha 'Justificativa', EXPLICITE a similaridade com o profissional informado no formulário, usando os mesmos critérios: Studio, senioridade, habilidades-chave e níveis, meses na empresa e, quando houver no CONTEXTO, domínio/cliente e stack. Seja curto e direto.",
+    "4) Justificativa (similaridade):",
+    "- Na linha 'Justificativa', EXPLICITE a similaridade com o profissional informado no formulário, usando os MESMOS critérios do formulário: Studio, senioridade, habilidades-chave/níveis, meses e, quando houver, domínio/cliente/stack.",
   ].join("\n");
 }
 
@@ -125,25 +124,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `mode inválido: ${String(mode)}` }, { status: 400 });
     }
 
-    // 1) Recupera exclusivamente da base vetorial (mais resultados para aumentar recall)
+    // 1) Recupera exclusivamente da KB — mais resultados ajudam recall sem ruído excessivo
     const chunks = await retrieveFromKB(message, { maxResults: 100, minScore: 0.0 });
     if (chunks.length === 0) {
       return NextResponse.json(
-        {
-          reply:
-            "Sem evidências suficientes na base de conhecimento para responder com segurança. Refine os termos ou atualize a KB.",
-        },
+        { reply: "Sem evidências suficientes no contexto." },
         { status: 200 },
       );
     }
 
-    // 2) Contexto sem rótulos "Trecho N" (evita vazar para a saída)
+    // 2) Contexto: sem cabeçalhos “Trecho N” para não vazar; mantém [Fonte] opcional
     const contexto = chunks
-      .map((c) => {
-        const bodyText = truncate(c.text, 3800);
-        // Mantemos a fonte opcionalmente, mas sem cabeçalho que o modelo possa copiar
-        return `${bodyText}${c.source ? `\n[Fonte]: ${c.source}` : ""}`;
-      })
+      .map((c) => `${truncate(c.text, 3800)}${c.source ? `\n[Fonte]: ${c.source}` : ""}`)
       .join("\n\n---\n\n");
 
     // 3) System por modo
@@ -152,13 +144,13 @@ export async function POST(req: Request) {
         ? buildSystemForSubstituicao(contexto)
         : buildSystemForMatchVagas(contexto);
 
-    // 4) Invoca o modelo com system + mensagem do usuário
+    // 4) Invocação do modelo
     const reply = await invokeHaiku({
-      message, // prompt construído no front
-      history,
-      system,
+      message,    // prompt do front (inclui campos do formulário)
+      history,    // histórico curto
+      system,     // regras + formato + contexto
       maxTokens: 1200,
-      temperature: 0.2, // menos restrito para melhorar recall
+      temperature: 0.2,
       topP: 0.9,
     });
 
