@@ -32,11 +32,10 @@ const MODES: Record<
   substituicao_profissional: {
     label: "Substituição de Profissional",
     legend:
-      "Defina a vaga de reposição exatamente como faria no match. Quanto mais detalhes, melhor o resultado.",
+      "Informe perfil desejado para a reposição. Quanto mais detalhes, mais adequados serão os profissionais.",
     submitLabel: "Sugerir substitutos",
-    // (Req. 4) mesmo placeholder do match
     placeholder:
-      "Requisitos desejáveis, nº de profissionais, atividades, escopo, necessidades do cliente…",
+      "Motivo da substituição, skills essenciais, diferenciais, contexto do projeto…",
   },
 };
 
@@ -78,6 +77,7 @@ const LEGEND_SPEED_MS = 25;
 
 /* ---------- Helpers ---------- */
 function splitBlocks(text: string): string[] {
+  // separa por linhas em branco duplas (tolerante a variações)
   return text
     .replace(/\r/g, "")
     .split(/\n{2,}/g)
@@ -86,11 +86,12 @@ function splitBlocks(text: string): string[] {
 }
 
 function norm(line: string) {
-  return line.replace(/^[\s\-•*]+/, "").trim();
+  return line.replace(/^[\s\-•*]+/, "").trim(); // remove prefixos tipo "- " ou "• "
 }
 
 function parseLineKV(line: string): [string, string] | null {
   const L = norm(line);
+  // aceita "Chave: valor" com tolerância a espaços
   const m = L.match(/^([^:]+):\s*(.+)$/i);
   if (!m) return null;
   return [m[1].toLowerCase().trim(), m[2].trim()];
@@ -115,6 +116,7 @@ function parseCandidates(text: string): Candidate[] {
       else if (k.startsWith("just")) cand.justificativa = v;
       else if (k.startsWith("email")) cand.email = v;
     }
+    // heurística: considera candidato válido se tiver pelo menos nome + (studio ou justificativa)
     if (cand.nome && (cand.studio || cand.justificativa)) out.push(cand);
   }
   return out;
@@ -124,7 +126,7 @@ export default function Page() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  // Splash screen (3s)
+  // Splash screen (3s) com animação "carregando..."
   const [showSplash, setShowSplash] = useState(true);
   const [dots, setDots] = useState("");
   useEffect(() => {
@@ -152,11 +154,11 @@ export default function Page() {
   const [techs, setTechs] = useState("");
   const [descricao, setDescricao] = useState("");
 
-  // (Req. 2) Senioridade padrão: Trainee
-  const [senioridadesSel, setSenioridadesSel] = useState<string[]>(["Trainee"]);
+  // Senioridades (checkbox, múltipla seleção) — "Pleno" marcado por padrão
+  const [senioridadesSel, setSenioridadesSel] = useState<string[]>(["Pleno"]);
 
-  // --- Campo para substituição ---
-  const [alvoSubstituicao, setAlvoSubstituicao] = useState("");
+  // --- Campo para substituição (ajustado) ---
+  const [alvoSubstituicao, setAlvoSubstituicao] = useState(""); // Nome do Profissional
 
   // Persistir modo na URL e no localStorage
   useEffect(() => {
@@ -166,17 +168,6 @@ export default function Page() {
     localStorage.setItem("mode", mode);
   }, [mode, router]);
 
-  // (Req. 1) Ao alternar a aba, zerar os campos preenchidos
-  useEffect(() => {
-    setTitulo("");
-    setStudio("Data & AI");
-    setTechs("");
-    setDescricao("");
-    setSenioridadesSel(["Trainee"]);
-    setAlvoSubstituicao("");
-    setMessages([]); // limpa o painel de resultados
-  }, [mode]);
-
   // Restaurar modo salvo se não veio pela URL
   useEffect(() => {
     if (!urlMode) {
@@ -185,7 +176,7 @@ export default function Page() {
     }
   }, [urlMode]);
 
-  // Efeito de "digitação" na legenda
+  // Efeito de "digitação" na legenda ao trocar de modo
   useEffect(() => {
     const target = MODES[mode].legend;
     setLegend("");
@@ -209,7 +200,7 @@ export default function Page() {
 
   // --- Prompt builders ---
   function buildPromptMatchVagas() {
-    const brief = `Título da Vaga: ${titulo.trim() || "-"}
+    const brief = `Título: ${titulo.trim() || "-"}
  + Studio: ${studioValue}
  + Senioridades: ${senioridadesSel.length ? senioridadesSel.join(", ") : "-"}
  + Tecnologias: ${techs.trim() || "-"}
@@ -228,11 +219,11 @@ export default function Page() {
   }
 
   function buildPromptSubstituicao() {
-    const briefBase = `Título da Vaga (se aplicável): ${titulo.trim() || "-"}
+    const briefBase = `Título (se aplicável): ${titulo.trim() || "-"}
  + Studio: ${studioValue}
  + Senioridades desejadas: ${senioridadesSel.length ? senioridadesSel.join(", ") : "-"}
  + Tecnologias-chave: ${techs.trim() || "-"}
- + Descrição: ${descricao.trim() || "-"}`; // (Req. 4) igual ao match
+ + Perfil desejado (descrição): ${descricao.trim() || "-"}`;
 
     const subInfo = `Nome do Profissional (atual): ${alvoSubstituicao.trim() || "-"}`;
 
@@ -240,8 +231,6 @@ export default function Page() {
       "Objetivo: sugerir substitutos adequados para o profissional indicado.",
       "Regras:",
       "- Considere fit técnico e senioridade; priorize candidatos do mesmo Studio e níveis 3–4 nas tecnologias informadas.",
-      // (Req. 6) Exigir similaridade explícita com o profissional alvo
-      "- A justificativa DEVE explicitar a similaridade com o profissional informado (stack, senioridade, domínio do cliente e critérios do formulário).",
       "- Liste substitutos potenciais com justificativas curtas.",
       "",
       "DADOS DA SUBSTITUIÇÃO:",
@@ -279,7 +268,8 @@ export default function Page() {
       try {
         const data = await r.json();
         reply =
-          (!r.ok && data?.error && `⚠️ ${data.error}`) || String(data?.reply ?? reply);
+          (!r.ok && data?.error && `⚠️ ${data.error}`) ||
+          String(data?.reply ?? reply);
       } catch {
         reply = `⚠️ Falha ao parsear resposta (${r.status} ${r.statusText})`;
       }
@@ -344,8 +334,7 @@ export default function Page() {
 
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.field}>
-          {/* (Req. 3) "Título" -> "Título da Vaga" */}
-          <label htmlFor="titulo">Título da Vaga</label>
+          <label htmlFor="titulo">Título</label>
           <input
             id="titulo"
             className={styles.input}
@@ -389,11 +378,7 @@ export default function Page() {
               const id = `sen_${s}`;
               const checked = senioridadesSel.includes(s);
               return (
-                <label
-                  key={s}
-                  htmlFor={id}
-                  style={{ display: "flex", gap: 8, alignItems: "center" }}
-                >
+                <label key={s} htmlFor={id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input
                     id={id}
                     type="checkbox"
@@ -424,8 +409,7 @@ export default function Page() {
         </div>
 
         <div className={styles.fieldFull}>
-          {/* (Req. 4) Mesmo texto nas duas abas */}
-          <label htmlFor="desc">Descreva a Vaga</label>
+          <label htmlFor="desc">{mode === "match_vagas" ? "Descreva a Vaga" : "Perfil Desejado"}</label>
           <textarea
             id="desc"
             className={`${styles.input} ${styles.textarea}`}
@@ -463,9 +447,7 @@ export default function Page() {
           <div className={styles.placeholder}>Os resultados aparecerão aqui.</div>
         )}
 
-        {loading && (
-          <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>
-        )}
+        {loading && <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>}
 
         {!loading && lastAssistant && candidates.length === 0 && (
           <div className={`${styles.msg} ${styles.assistant}`}>{lastAssistant.content}</div>
@@ -474,36 +456,21 @@ export default function Page() {
         {!loading && candidates.length > 0 && (
           <div
             className={styles.cgrid}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-              gap: 16,
-            }}
+            style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}
           >
             {candidates.map((c, idx) => (
               <article
                 key={`${c.nome || "c"}-${idx}`}
                 className={styles.ccard}
-                style={{
-                  border: "1px solid var(--border)",
-                  borderRadius: 12,
-                  padding: 12,
-                  background: "var(--surface)",
-                }}
+                style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 12, background: "var(--surface)" }}
               >
                 <h3 style={{ margin: "0 0 6px", fontSize: 16, color: "var(--text)" }}>
                   {c.nome || "—"}
                 </h3>
                 <div style={{ fontSize: 13, color: "var(--text)" }}>
-                  <div>
-                    <strong>Studio:</strong> {c.studio || "—"}
-                  </div>
-                  <div>
-                    <strong>Senioridade:</strong> {c.senioridade || "—"}
-                  </div>
-                  <div>
-                    <strong>Meses na empresa:</strong> {c.meses || "—"}
-                  </div>
+                  <div><strong>Studio:</strong> {c.studio || "—"}</div>
+                  <div><strong>Senioridade:</strong> {c.senioridade || "—"}</div>
+                  <div><strong>Meses na empresa:</strong> {c.meses || "—"}</div>
                 </div>
                 {c.justificativa && (
                   <p style={{ marginTop: 8, fontSize: 13, color: "var(--text)" }}>
@@ -512,10 +479,7 @@ export default function Page() {
                 )}
                 {c.email && (
                   <p style={{ marginTop: 6, fontSize: 13 }}>
-                    <a
-                      href={`mailto:${c.email}`}
-                      style={{ color: "var(--brand)", textDecoration: "none" }}
-                    >
+                    <a href={`mailto:${c.email}`} style={{ color: "var(--brand)", textDecoration: "none" }}>
                       {c.email}
                     </a>
                   </p>
