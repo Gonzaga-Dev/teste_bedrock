@@ -102,7 +102,10 @@ function buildSystemForSubstituicao(contexto: string): string {
     "- Na linha 'Justificativa', explicite a similaridade com o profissional informado (nome presente no enunciado), citando pelo menos um dos critérios: senioridade, Studio, principais tecnologias/níveis e/ou domínio do cliente, conforme o CONTEXTO.",
     "",
     "4) Quantidade de Selecionados:",
-    "- Retorne até 10 substitutos. Se não houv
+    "- Retorne até 10 substitutos. Se não houver 10 no mesmo Studio, amplie para outros Studios.",
+  ].join("\n");
+}
+
 // --- POST /api/chat ---
 export async function POST(req: Request) {
   try {
@@ -142,13 +145,13 @@ export async function POST(req: Request) {
       )
       .join("\n\n");
 
-    // 2) System por modo (regras + exigência de usar apenas o contexto + formato fixo)
+    // 2) System por modo
     const system =
       mode === "substituicao_profissional"
         ? buildSystemForSubstituicao(contexto)
         : buildSystemForMatchVagas(contexto);
 
-    // 3) Invoca o modelo com o system + mensagem do usuário
+    // 3) Invoca o modelo
     const reply = await invokeHaiku({
       message, // enunciado/brief do formulário (já inclui os campos do front)
       history, // mantém histórico curto
