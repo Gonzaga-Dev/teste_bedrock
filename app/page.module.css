@@ -144,6 +144,41 @@
   resize: vertical;
 }
 
+/* ---------- Checkboxes de Senioridade ---------- */
+.checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 8px;
+}
+
+.checkItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  user-select: none;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.checkItem:hover {
+  background: rgba(255,255,255,0.02);
+}
+
+.checkItem input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
+}
+
+.checkItem:has(input[type="checkbox"]:focus-visible) {
+  box-shadow: 0 0 0 3px rgba(245,158,11,.25);
+  border-color: var(--focus);
+}
+
 /* ===========================
    Ações
    =========================== */
@@ -182,7 +217,7 @@
 }
 
 /* ===========================
-   Resultados
+   Resultados (Cards)
    =========================== */
 .card {
   background: var(--surface);
@@ -193,12 +228,74 @@
   box-shadow: 0 1px 2px rgba(0,0,0,.3);
 }
 
+/* Grid que contém os cartões */
+.cgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+/* Cartão individual do candidato */
+.ccard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  transition: transform .06s ease, box-shadow .15s ease, border-color .15s ease;
+}
+
+.ccard:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  border-color: rgba(234,179,8,0.35); /* leve destaque no hover */
+}
+
+.ccard h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.kv {
+  font-size: 13px;
+  color: var(--text);
+  display: grid;
+  gap: 2px;
+}
+
+.kv strong {
+  font-weight: 700;
+}
+
+.justif {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.emailLink {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.emailLink a {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.emailLink a:hover {
+  text-decoration: underline;
+}
+
 .placeholder {
   color: var(--text-muted);
   font-size: 14px;
 }
 
-/* Mensagens do modelo */
+/* Mensagens do modelo (fallback) */
 .msg {
   padding: 12px 14px;
   border-radius: 10px;
