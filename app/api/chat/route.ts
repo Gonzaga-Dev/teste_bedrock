@@ -32,7 +32,7 @@ function sharedOutputAndConstraints(contexto: string) {
   return [
     "USE EXCLUSIVAMENTE as informações do CONTEXTO para responder.",
     "É PROIBIDO inventar, completar a partir de conhecimento geral ou usar fontes externas.",
-    "Se algo solicitado não constar no CONTEXTO, responda exatamente: 'Sem evidências suficientes no contexto.'",
+    "Se algum CAMPO específico de um candidato não constar no CONTEXTO, preencha a linha correspondente com valor vazio (não invente).",
     "",
     "=== PRIORIDADES ===",
     "- Priorize candidatos com nível 3 ou 4 nas tecnologias informadas na solicitação.",
@@ -45,7 +45,7 @@ function sharedOutputAndConstraints(contexto: string) {
     "- Studio: <Studio do candidato>",
     "- Senioridade: <Senioridade do candidato>",
     "- Meses na empresa: <número de meses>",
-    "- Justificativa: <síntese curta do porquê foi selecionado>",
+    "- Justificativa: <síntese curta>",
     "- Email: <email do candidato>",
     "",
     "Entre um candidato e outro, deixe UMA linha em branco.",
@@ -79,6 +79,9 @@ function buildSystemForMatchVagas(contexto: string): string {
     "",
     "4) Quantidade de Selecionados:",
     "- Retorne até 10 candidatos. Se não houver 10 no mesmo Studio, amplie para outros Studios.",
+    "",
+    "5) Justificativa (modo match_vagas):",
+    "- Na linha 'Justificativa', faça uma síntese objetiva dos critérios de seleção (Studio, senioridade, habilidades/níveis e meses na empresa).",
   ].join("\n");
 }
 
@@ -100,6 +103,10 @@ function buildSystemForSubstituicao(contexto: string): string {
     "",
     "3) Quantidade de Selecionados:",
     "- Retorne até 10 substitutos. Se não houver 10 no mesmo Studio, amplie para outros Studios.",
+    "",
+    "4) Justificativa (modo substituição):",
+    "- Na linha 'Justificativa', EXPLICITE a similaridade com o profissional informado no formulário, usando os MESMOS critérios: Studio, senioridade, habilidades-chave e níveis, meses na empresa e, quando houver no CONTEXTO, domínio/cliente e stack. Seja curto e direto.",
+    "- Ex.: 'Similar ao <profissional informado> em Studio, senioridade e stack {Java(3), React(3)}; 24 meses na empresa; domínio do cliente compatível.'",
   ].join("\n");
 }
 
@@ -147,14 +154,15 @@ export async function POST(req: Request) {
 
     // 3) Invoca o modelo com o system + mensagem do usuário
     const reply = await invokeHaiku({
-      message, // enunciado/brief do formulário (já inclui os campos do front)
+      message, // enunciado/brief do formulário (inclui os campos do front)
       history, // mantém histórico curto
       system,
       maxTokens: 1200,
-      temperature: 0.2,
-      topP: 0.9,
+      temperature: 0.15,
+      topP: 0.8,
     });
 
+    // Observação: não pós-processamos a saída para não violar o formato fixo exigido ao modelo.
     return NextResponse.json({ reply }, { status: 200 });
   } catch (e: any) {
     const msg = (e?.message || "erro").toString();
