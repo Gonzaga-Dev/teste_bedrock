@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, FormEvent } from "react";
+import { useEffect, useRef, useState, FormEvent, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
 
 type Msg = { role: "user" | "assistant"; content: string };
 type ModeKey = "match_vagas" | "substituicao_profissional";
+
+type Candidate = {
+  nome?: string;
+  studio?: string;
+  senioridade?: string;
+  meses?: string;
+  justificativa?: string;
+  email?: string;
+};
 
 /* Modos com legends/labels atualizados */
 const MODES: Record<
@@ -62,7 +71,60 @@ const STUDIOS = [
   "Todos os Studios",
 ] as const;
 
+const SENIORIDADES = ["Trainee", "Júnior", "Pleno", "Sênior", "Especialista"] as const;
+
 const LEGEND_SPEED_MS = 25;
+
+/* ---------- Helpers ---------- */
+function splitBlocks(text: string): string[] {
+  // separa por linhas em branco duplas (tolerante a variações)
+  return text
+    .replace(/\r/g, "")
+    .split(/\n{2,}/g)
+    .map((b) => b.trim())
+    .filter(Boolean);
+}
+
+function norm(line: string) {
+  return line.replace(/^[\s\-•*]+/, "").trim(); // remove prefixos tipo "- " ou "• "
+}
+
+function parseLineKV(line: string): [string, string] | null {
+  const L = norm(line);
+  // aceita "Chave: valor" com tolerância a espaços
+  const m = L.match(/^([^:]+):\s*(.+)$/i);
+  if (!m) return null;
+  return [m[1].toLowerCase().trim(), m[2].trim()];
+}
+
+function parseCandidates(text: string): Candidate[] {
+  if (!text) return [];
+  const blocks = splitBlocks(text);
+
+  const out: Candidate[] = [];
+  for (const b of blocks) {
+    const cand: Candidate = {};
+    const lines = b.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    for (const raw of lines) {
+      const kv = parseLineKV(raw);
+      if (!kv) continue;
+      const [k, v] = kv;
+
+      if (k.startsWith("nome")) cand.nome = v;
+      else if (k.startsWith("studio")) cand.studio = v;
+      else if (k.startsWith("senior")) cand.senioridade = v;
+      else if (k.startsWith("meses")) cand.meses = v.replace(/[^\d.,]/g, "").replace(/,$/, "");
+      else if (k.startsWith("just")) cand.justificativa = v;
+      else if (k.startsWith("email")) cand.email = v;
+    }
+
+    // heurística: considera candidato válido se tiver pelo menos nome + (studio ou justificativa)
+    if (cand.nome && (cand.studio || cand.justificativa)) out.push(cand);
+  }
+
+  return out;
+}
 
 export default function Page() {
   const router = useRouter();
@@ -74,9 +136,7 @@ export default function Page() {
 
   useEffect(() => {
     const t = setTimeout(() => setShowSplash(false), 3000);
-    const i = setInterval(() => {
-      setDots((d) => (d.length >= 3 ? "" : d + "."));
-    }, 400);
+    const i = setInterval(() => setDots((d) => (d.length >= 3 ? "" : d + ".")), 400);
     return () => {
       clearTimeout(t);
       clearInterval(i);
@@ -96,9 +156,11 @@ export default function Page() {
   // --- Form base (comum) ---
   const [titulo, setTitulo] = useState("");
   const [studio, setStudio] = useState<typeof STUDIOS[number]>("Data & AI");
-  const [senioridade, setSenioridade] = useState("Trainee");
   const [techs, setTechs] = useState("");
   const [descricao, setDescricao] = useState("");
+
+  // Senioridades (checkbox, múltipla seleção) — "Pleno" marcado por padrão
+  const [senioridadesSel, setSenioridadesSel] = useState<string[]>(["Pleno"]);
 
   // --- Campo para substituição (ajustado) ---
   const [alvoSubstituicao, setAlvoSubstituicao] = useState(""); // Nome do Profissional
@@ -144,7 +206,7 @@ export default function Page() {
     const brief =
       `Título: ${titulo.trim() || "-"}\n` +
       `Studio: ${studioValue}\n` +
-      `Senioridade: ${senioridade}\n` +
+      `Senioridades: ${senioridadesSel.length ? senioridadesSel.join(", ") : "-"}\n` +
       `Tecnologias: ${techs.trim() || "-"}\n` +
       `Descrição: ${descricao.trim() || "-"}`;
 
@@ -152,8 +214,8 @@ export default function Page() {
       "Objetivo: encontrar candidatos com melhor aderência à vaga abaixo.",
       "Regras:",
       "- Considere aderência técnica, senioridade e contexto informado.",
+      "- Priorize candidatos com nível 3 ou 4 nas tecnologias informadas e do mesmo Studio; se não atingir quantidade, amplie para outros Studios.",
       "- Responda de forma objetiva, listando candidatos e justificativas resumidas.",
-      "- Se houver múltiplos perfis possíveis, priorize os mais alinhados e aponte trade-offs.",
       "",
       "VAGA:",
       brief,
@@ -164,7 +226,7 @@ export default function Page() {
     const briefBase =
       `Título (se aplicável): ${titulo.trim() || "-"}\n` +
       `Studio: ${studioValue}\n` +
-      `Senioridade desejada: ${senioridade}\n` +
+      `Senioridades desejadas: ${senioridadesSel.length ? senioridadesSel.join(", ") : "-"}\n` +
       `Tecnologias-chave: ${techs.trim() || "-"}\n` +
       `Perfil desejado (descrição): ${descricao.trim() || "-"}`;
 
@@ -173,8 +235,8 @@ export default function Page() {
     return [
       "Objetivo: sugerir substitutos adequados para o profissional indicado.",
       "Regras:",
-      "- Considere fit técnico, senioridade, e dê preferência a profissionais do mesmo Studio",
-      "- Liste substitutos potenciais com justificativas curtas",
+      "- Considere fit técnico e senioridade; priorize candidatos do mesmo Studio e níveis 3–4 nas tecnologias informadas.",
+      "- Liste substitutos potenciais com justificativas curtas.",
       "",
       "DADOS DA SUBSTITUIÇÃO:",
       subInfo,
@@ -225,9 +287,14 @@ export default function Page() {
     }
   }
 
-  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant") ?? null;
+  const lastAssistant = useMemo(
+    () => [...messages].reverse().find((m) => m.role === "assistant") ?? null,
+    [messages],
+  );
 
-  /* Splash screen simples, centralizado */
+  const candidates = useMemo(() => parseCandidates(lastAssistant?.content || ""), [lastAssistant]);
+
+  /* Splash */
   if (showSplash) {
     return (
       <div className={styles.wrapper} style={{ display: "grid", placeItems: "center" }}>
@@ -239,7 +306,7 @@ export default function Page() {
     );
   }
 
-  // App normal
+  // App
   return (
     <div className={styles.wrapper}>
       <header className={styles.header}>
@@ -294,21 +361,32 @@ export default function Page() {
           </select>
         </div>
 
+        {/* Senioridades: checkboxes (múltipla seleção) */}
         <div className={styles.field}>
-          <label htmlFor="senioridade">Senioridade</label>
-          <select
-            id="senioridade"
-            className={styles.input}
-            value={senioridade}
-            onChange={(e) => setSenioridade(e.target.value)}
-            required
-          >
-            <option>Trainee</option>
-            <option>Júnior</option>
-            <option>Pleno</option>
-            <option>Sênior</option>
-            <option>Especialista</option>
-          </select>
+          <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>
+            Senioridades
+          </span>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8 }}>
+            {SENIORIDADES.map((s) => {
+              const id = `sen_${s}`;
+              const checked = senioridadesSel.includes(s);
+              return (
+                <label key={s} htmlFor={id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    id={id}
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      setSenioridadesSel((prev) =>
+                        e.target.checked ? [...prev, s] : prev.filter((x) => x !== s),
+                      );
+                    }}
+                  />
+                  <span>{s}</span>
+                </label>
+              );
+            })}
+          </div>
         </div>
 
         <div className={styles.field}>
@@ -336,19 +414,17 @@ export default function Page() {
         </div>
 
         {mode === "substituicao_profissional" && (
-          <>
-            <div className={styles.field}>
-              <label htmlFor="alvo">Nome do Profissional</label>
-              <input
-                id="alvo"
-                className={styles.input}
-                placeholder="Ex.: João Silva"
-                value={alvoSubstituicao}
-                onChange={(e) => setAlvoSubstituicao(e.target.value)}
-                required={mode === "substituicao_profissional"}
-              />
-            </div>
-          </>
+          <div className={styles.field}>
+            <label htmlFor="alvo">Nome do Profissional</label>
+            <input
+              id="alvo"
+              className={styles.input}
+              placeholder="Ex.: João Silva"
+              value={alvoSubstituicao}
+              onChange={(e) => setAlvoSubstituicao(e.target.value)}
+              required={mode === "substituicao_profissional"}
+            />
+          </div>
         )}
 
         <div className={styles.actions}>
@@ -358,14 +434,56 @@ export default function Page() {
         </div>
       </form>
 
+      {/* Resultado em Cards */}
       <section className={styles.card}>
         {!lastAssistant && !loading && (
           <div className={styles.placeholder}>Os resultados aparecerão aqui.</div>
         )}
-        {lastAssistant && (
+
+        {loading && <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>}
+
+        {!loading && lastAssistant && candidates.length === 0 && (
           <div className={`${styles.msg} ${styles.assistant}`}>{lastAssistant.content}</div>
         )}
-        {loading && <div className={`${styles.msg} ${styles.assistant}`}>Gerando resposta…</div>}
+
+        {!loading && candidates.length > 0 && (
+          <div className={styles.cgrid} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+            {candidates.map((c, idx) => (
+              <article
+                key={`${c.nome || "c"}-${idx}`}
+                className={styles.ccard}
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  padding: 12,
+                  background: "var(--surface)",
+                }}
+              >
+                <h3 style={{ margin: "0 0 6px", fontSize: 16, color: "var(--text)" }}>
+                  {c.nome || "—"}
+                </h3>
+                <div style={{ fontSize: 13, color: "var(--text)" }}>
+                  <div><strong>Studio:</strong> {c.studio || "—"}</div>
+                  <div><strong>Senioridade:</strong> {c.senioridade || "—"}</div>
+                  <div><strong>Meses na empresa:</strong> {c.meses || "—"}</div>
+                </div>
+                {c.justificativa && (
+                  <p style={{ marginTop: 8, fontSize: 13, color: "var(--text)" }}>
+                    <strong>Justificativa:</strong> {c.justificativa}
+                  </p>
+                )}
+                {c.email && (
+                  <p style={{ marginTop: 6, fontSize: 13 }}>
+                    <a href={`mailto:${c.email}`} style={{ color: "var(--brand)", textDecoration: "none" }}>
+                      {c.email}
+                    </a>
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+
         <div ref={endRef} />
       </section>
     </div>
