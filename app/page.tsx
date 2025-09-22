@@ -16,6 +16,12 @@ type Candidate = {
   email?: string;
 };
 
+/* Textos compartilhados entre os modos (pedido 4) */
+const COMMON_LEGEND =
+  "Quanto mais detalhes forem fornecidos, mais preciso será o match. Que tipo de profissional você busca hoje?";
+const COMMON_PLACEHOLDER =
+  "Requisitos desejáveis, nº de profissionais, atividades, escopo, necessidades do cliente…";
+
 /* Modos com legends/labels atualizados */
 const MODES: Record<
   ModeKey,
@@ -23,19 +29,15 @@ const MODES: Record<
 > = {
   match_vagas: {
     label: "Match Vagas",
-    legend:
-      "Quanto mais detalhes forem fornecidos, mais preciso será o match. Que tipo de profissional você busca hoje?",
+    legend: COMMON_LEGEND,
     submitLabel: "Buscar candidatos",
-    placeholder:
-      "Requisitos desejáveis, nº de profissionais, atividades, escopo, necessidades do cliente…",
+    placeholder: COMMON_PLACEHOLDER,
   },
   substituicao_profissional: {
     label: "Substituição de Profissional",
-    legend:
-      "Informe perfil desejado para a reposição. Quanto mais detalhes, mais adequados serão os profissionais.",
+    legend: COMMON_LEGEND, // igual ao match
     submitLabel: "Sugerir substitutos",
-    placeholder:
-      "Motivo da substituição, skills essenciais, diferenciais, contexto do projeto…",
+    placeholder: COMMON_PLACEHOLDER, // igual ao match
   },
 };
 
@@ -77,7 +79,6 @@ const LEGEND_SPEED_MS = 25;
 
 /* ---------- Helpers ---------- */
 function splitBlocks(text: string): string[] {
-  // separa por linhas em branco duplas (tolerante a variações)
   return text
     .replace(/\r/g, "")
     .split(/\n{2,}/g)
@@ -86,12 +87,11 @@ function splitBlocks(text: string): string[] {
 }
 
 function norm(line: string) {
-  return line.replace(/^[\s\-•*]+/, "").trim(); // remove prefixos tipo "- " ou "• "
+  return line.replace(/^[\s\-•*]+/, "").trim();
 }
 
 function parseLineKV(line: string): [string, string] | null {
   const L = norm(line);
-  // aceita "Chave: valor" com tolerância a espaços
   const m = L.match(/^([^:]+):\s*(.+)$/i);
   if (!m) return null;
   return [m[1].toLowerCase().trim(), m[2].trim()];
@@ -104,7 +104,10 @@ function parseCandidates(text: string): Candidate[] {
   const out: Candidate[] = [];
   for (const b of blocks) {
     const cand: Candidate = {};
-    const lines = b.split("\n").map((l) => l.trim()).filter(Boolean);
+    const lines = b
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
 
     for (const raw of lines) {
       const kv = parseLineKV(raw);
@@ -119,7 +122,6 @@ function parseCandidates(text: string): Candidate[] {
       else if (k.startsWith("email")) cand.email = v;
     }
 
-    // heurística: considera candidato válido se tiver pelo menos nome + (studio ou justificativa)
     if (cand.nome && (cand.studio || cand.justificativa)) out.push(cand);
   }
 
@@ -130,7 +132,7 @@ export default function Page() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  // Splash screen (3s) com animação "carregando..."
+  // Splash (3s)
   const [showSplash, setShowSplash] = useState(true);
   const [dots, setDots] = useState("");
 
@@ -154,16 +156,17 @@ export default function Page() {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   // --- Form base (comum) ---
-  const [titulo, setTitulo] = useState("");
+  const [titulo, setTitulo] = useState(""); // (3) rótulo muda abaixo
   const [studio, setStudio] = useState<typeof STUDIOS[number]>("Data & AI");
   const [techs, setTechs] = useState("");
   const [descricao, setDescricao] = useState("");
 
-  // Senioridades (checkbox, múltipla seleção) — "Pleno" marcado por padrão
-  const [senioridadesSel, setSenioridadesSel] = useState<string[]>(["Pleno"]);
+  // Senioridades — (2) padrão agora é Trainee
+  const DEFAULT_SENIORIDADES = ["Trainee"];
+  const [senioridadesSel, setSenioridadesSel] = useState<string[]>(DEFAULT_SENIORIDADES);
 
-  // --- Campo para substituição (ajustado) ---
-  const [alvoSubstituicao, setAlvoSubstituicao] = useState(""); // Nome do Profissional
+  // Substituição
+  const [alvoSubstituicao, setAlvoSubstituicao] = useState("");
 
   // Persistir modo na URL e no localStorage
   useEffect(() => {
@@ -181,8 +184,21 @@ export default function Page() {
     }
   }, [urlMode]);
 
-  // Efeito de "digitação" na legenda ao trocar de modo
+  // Função de reset geral (1)
+  const resetAll = () => {
+    setTitulo("");
+    setStudio("Data & AI");
+    setTechs("");
+    setDescricao("");
+    setSenioridadesSel(DEFAULT_SENIORIDADES); // Trainee
+    setAlvoSubstituicao("");
+    setMessages([]); // limpa resultados também
+  };
+
+  // Ao trocar de modo, zera campos e anima legenda
   useEffect(() => {
+    resetAll();
+
     const target = MODES[mode].legend;
     setLegend("");
     let i = 0;
@@ -192,6 +208,7 @@ export default function Page() {
       if (i >= target.length) clearInterval(id);
     }, LEGEND_SPEED_MS);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
   // Auto scroll
@@ -204,7 +221,7 @@ export default function Page() {
   // --- Prompt builders ---
   function buildPromptMatchVagas() {
     const brief =
-      `Título: ${titulo.trim() || "-"}\n` +
+      `Título da Vaga: ${titulo.trim() || "-"}\n` +
       `Studio: ${studioValue}\n` +
       `Senioridades: ${senioridadesSel.length ? senioridadesSel.join(", ") : "-"}\n` +
       `Tecnologias: ${techs.trim() || "-"}\n` +
@@ -224,11 +241,11 @@ export default function Page() {
 
   function buildPromptSubstituicao() {
     const briefBase =
-      `Título (se aplicável): ${titulo.trim() || "-"}\n` +
+      `Título da Vaga (se aplicável): ${titulo.trim() || "-"}\n` +
       `Studio: ${studioValue}\n` +
       `Senioridades desejadas: ${senioridadesSel.length ? senioridadesSel.join(", ") : "-"}\n` +
       `Tecnologias-chave: ${techs.trim() || "-"}\n` +
-      `Perfil desejado (descrição): ${descricao.trim() || "-"}`;
+      `Descrição: ${descricao.trim() || "-"}`;
 
     const subInfo = `Nome do Profissional (atual): ${alvoSubstituicao.trim() || "-"}`;
 
@@ -317,7 +334,7 @@ export default function Page() {
             <button
               key={k}
               className={`${styles.modeCard} ${mode === k ? styles.active : ""}`}
-              onClick={() => setMode(k)}
+              onClick={() => setMode(k)} // alternar aba -> reset no useEffect
               type="button"
             >
               {MODES[k].label}
@@ -333,7 +350,7 @@ export default function Page() {
 
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.field}>
-          <label htmlFor="titulo">Título</label>
+          <label htmlFor="titulo">Título da Vaga</label> {/* (3) */}
           <input
             id="titulo"
             className={styles.input}
@@ -402,7 +419,8 @@ export default function Page() {
         </div>
 
         <div className={styles.fieldFull}>
-          <label htmlFor="desc">{mode === "match_vagas" ? "Descreva a Vaga" : "Perfil Desejado"}</label>
+          {/* (4) Mesmo rótulo nos dois modos */}
+          <label htmlFor="desc">Descreva a Vaga</label>
           <textarea
             id="desc"
             className={`${styles.input} ${styles.textarea}`}
@@ -447,7 +465,14 @@ export default function Page() {
         )}
 
         {!loading && candidates.length > 0 && (
-          <div className={styles.cgrid} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+          <div
+            className={styles.cgrid}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+              gap: 16,
+            }}
+          >
             {candidates.map((c, idx) => (
               <article
                 key={`${c.nome || "c"}-${idx}`}
@@ -463,9 +488,15 @@ export default function Page() {
                   {c.nome || "—"}
                 </h3>
                 <div style={{ fontSize: 13, color: "var(--text)" }}>
-                  <div><strong>Studio:</strong> {c.studio || "—"}</div>
-                  <div><strong>Senioridade:</strong> {c.senioridade || "—"}</div>
-                  <div><strong>Meses na empresa:</strong> {c.meses || "—"}</div>
+                  <div>
+                    <strong>Studio:</strong> {c.studio || "—"}
+                  </div>
+                  <div>
+                    <strong>Senioridade:</strong> {c.senioridade || "—"}
+                  </div>
+                  <div>
+                    <strong>Meses na empresa:</strong> {c.meses || "—"}
+                  </div>
                 </div>
                 {c.justificativa && (
                   <p style={{ marginTop: 8, fontSize: 13, color: "var(--text)" }}>
@@ -474,7 +505,10 @@ export default function Page() {
                 )}
                 {c.email && (
                   <p style={{ marginTop: 6, fontSize: 13 }}>
-                    <a href={`mailto:${c.email}`} style={{ color: "var(--brand)", textDecoration: "none" }}>
+                    <a
+                      href={`mailto:${c.email}`}
+                      style={{ color: "var(--brand)", textDecoration: "none" }}
+                    >
                       {c.email}
                     </a>
                   </p>
