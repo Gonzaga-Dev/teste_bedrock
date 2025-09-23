@@ -77,8 +77,12 @@ function buildSystemForMatchVagas(contexto: string): string {
     "- Priorize nível 3 e 4 nas tecnologias informadas.",
     "- Conhecimentos, quando mencionados, devem seguir o formato {categoria = [habilidade (nível)]}.",
     "",
-    "4) Quantidade de Selecionados:",
-    "- Retorne até 10 candidatos. Se não houver 10 no mesmo Studio, amplie para outros Studios.",
+    "4) Quantidade de Selecionados (IMPOSITIVO):",
+    "- Extraia do ENUNCIADO a quantidade desejada Q (número inteiro). Exemplos: '15 candidatos', 'traga 8', 'preciso de 3 perfis' ⇒ Q = 15, 8, 3.",
+    "- Se o enunciado NÃO trouxer número explícito, defina Q = 10.",
+    "- Retorne EXATAMENTE Q candidatos no formato obrigatório.",
+    "- Se não houver Q no mesmo Studio, amplie gradualmente para outros Studios até atingir Q.",
+    "- Se ainda assim não houver evidências suficientes no CONTEXTO para atingir Q, retorne apenas os candidatos encontrados (sem comentários adicionais).",
   ].join("\n");
 }
 
@@ -98,8 +102,12 @@ function buildSystemForSubstituicao(contexto: string): string {
     "2) Continuidade e Risco (quando o CONTEXTO trouxer evidências):",
     "- Valorizar candidatos com histórico/fit no domínio do cliente, stack semelhante e menor curva de rampa.",
     "",
-    "3) Quantidade de Selecionados:",
-    "- Retorne até 10 substitutos. Se não houver 10 no mesmo Studio, amplie para outros Studios.",
+    "3) Quantidade de Selecionados (IMPOSITIVO):",
+    "- Extraia do ENUNCIADO a quantidade desejada Q (número inteiro). Exemplos: '15 candidatos', 'traga 8', 'preciso de 3 perfis' ⇒ Q = 15, 8, 3.",
+    "- Se o enunciado NÃO trouxer número explícito, defina Q = 10.",
+    "- Retorne EXATAMENTE Q substitutos no formato obrigatório.",
+    "- Se não houver Q no mesmo Studio, amplie gradualmente para outros Studios até atingir Q.",
+    "- Se ainda assim não houver evidências suficientes no CONTEXTO para atingir Q, retorne apenas os substitutos encontrados (sem comentários adicionais).",
   ].join("\n");
 }
 
@@ -136,9 +144,7 @@ export async function POST(req: Request) {
     const contexto = chunks
       .map(
         (c) =>
-          `${truncate(c.text, 1800)}${
-            c.source ? `\n[Fonte]: ${c.source}` : ""
-          }`
+          `${truncate(c.text, 1800)}${c.source ? `\n[Fonte]: ${c.source}` : ""}`
       )
       .join("\n\n");
 
